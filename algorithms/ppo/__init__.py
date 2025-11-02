@@ -11,11 +11,20 @@
 """
 # ------------------------------------------------------------
 
+from algorithms.ppo.agent import PPOPenaltyAgent
+from algorithms.ppo.penalty_self_play_trainer import SelfPlayPPOPenaltyTrainer
+from algorithms.ppo.penalty_trainer import PPOPenaltyTrainer
 from algorithms.ppo.self_play_trainer import PolicyPool, SelfPlayPPOTrainer
 from algorithms.ppo.trainer import PPOTrainer
 
 __all__ = [
+    # Agents
+    "PPOPenaltyAgent",
+    # Trainers
     "PPOTrainer",
+    "PPOPenaltyTrainer",
     "SelfPlayPPOTrainer",
+    "SelfPlayPPOPenaltyTrainer",
+    # Utilities
     "PolicyPool",
 ]

@@ -117,5 +117,17 @@ def build_agent_from_config(
             config=agent_config,
             device=device,
         )
+    elif agent_type == "ppo_penalty":
+        # 延迟导入以避免循环导入
+        from algorithms.ppo.agent import PPOPenaltyAgent
+
+        return PPOPenaltyAgent(
+            obs_dim=obs_dim,
+            action_dim=action_dim,
+            config=agent_config,
+            device=device,
+        )
     else:
-        raise ValueError(f"Unknown agent type: {agent_type}. Available: ['ppo']")
+        raise ValueError(
+            f"Unknown agent type: {agent_type}. Available: ['ppo', 'ppo_penalty']"
+        )

@@ -198,11 +198,40 @@ class SelfPlayPPOTrainer(PPOTrainer):
             num_updates: 训练更新次数
         """
         self.agent.to_training_mode()
+        
+        # 输出训练开始信息
+        if self.logger:
+            log_msg = f"开始训练，共 {num_updates} 个更新..."
+            if hasattr(self.logger, "logger"):
+                self.logger.logger.info(log_msg)
+            elif hasattr(self.logger, "info"):
+                self.logger.info(log_msg)
+            else:
+                print(log_msg)
+        else:
+            print(f"开始训练，共 {num_updates} 个更新...")
 
         for update in range(num_updates):
+            # 输出进度（每10个更新或第一个更新）
+            if update == 0 or (update + 1) % 10 == 0:
+                progress_msg = f"更新进度: {update + 1}/{num_updates} (Episode {self.episode_count + 1})"
+                if self.logger:
+                    if hasattr(self.logger, "logger"):
+                        self.logger.logger.info(progress_msg)
+                    elif hasattr(self.logger, "info"):
+                        self.logger.info(progress_msg)
+                    else:
+                        print(progress_msg)
+                else:
+                    print(progress_msg)
+            
             # 收集数据
             rollout_data = self.rollout_collector.collect()
             self.episode_count += 1
+            
+            # 输出收集完成的提示
+            if update == 0:
+                print(f"✅ 第一个episode收集完成（{self.episode_count}个episodes）", flush=True)
 
             # 计算步数（多Agent情况下需要累加所有agent的步数）
             if isinstance(rollout_data, dict) and "obs" in rollout_data:

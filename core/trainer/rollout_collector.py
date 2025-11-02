@@ -88,6 +88,10 @@ class RolloutCollector:
         obs = self.env.reset()
         done = False
         step = 0
+        
+        # 每25步输出一次进度
+        progress_freq = max(25, self.max_steps_per_episode // 40)
+        print(f"开始收集rollout数据（单Agent，最多{self.max_steps_per_episode}步）...", flush=True)
 
         while not done and step < self.max_steps_per_episode:
             # Agent选择动作
@@ -107,6 +111,14 @@ class RolloutCollector:
 
             obs = next_obs
             step += 1
+            
+            # 输出进度
+            if step % progress_freq == 0:
+                print(f"收集进度: {step}/{self.max_steps_per_episode} 步", end='\r', flush=True)
+        
+        # 清理进度输出
+        if step > 0:
+            print()  # 换行
 
         return {
             "obs": np.array(obs_list),
@@ -138,10 +150,29 @@ class RolloutCollector:
         obs = self.env.reset()
         done = False
         step = 0
+        
+        # 每25步或每10%进度输出一次（对于长episode很有用）
+        progress_freq = max(25, self.max_steps_per_episode // 40)  # 大约输出40次进度
+        
+        # 输出开始收集的提示
+        num_agents = len(agent_ids)
+        print(f"开始收集rollout数据（{num_agents}个Agent，最多{self.max_steps_per_episode}步）...", flush=True)
 
         while not done and step < self.max_steps_per_episode:
-            # 批量选择动作
-            actions_dict = self.agent.act(obs, deterministic=False)
+            # 批量选择动作（可能很慢，特别是首次运行时）
+            # 首次运行时显示进度，后续只在每100步显示一次
+            show_progress = (step == 0) or (step % 100 == 0 and step > 0)
+            if show_progress and step == 0:
+                print("  正在选择初始动作（首次forward pass可能较慢，请耐心等待）...", flush=True)
+            elif show_progress:
+                print(f"  选择动作中... (step {step})", end='\r', flush=True)
+            
+            actions_dict = self.agent.act(obs, deterministic=False, show_progress=(step == 0))
+            
+            if show_progress and step == 0:
+                print("  ✅ 初始动作选择完成，继续收集数据...", flush=True)
+            elif show_progress:
+                print()  # 换行
 
             # 环境步进
             next_obs, rewards, dones, info = self.env.step(actions_dict)
@@ -167,6 +198,14 @@ class RolloutCollector:
 
             obs = next_obs
             step += 1
+            
+            # 输出进度（每progress_freq步）
+            if step % progress_freq == 0:
+                print(f"收集进度: {step}/{self.max_steps_per_episode} 步", end='\r', flush=True)
+
+        # 清理进度输出
+        if step > 0:
+            print()  # 换行
 
         # 转换为numpy数组
         return {

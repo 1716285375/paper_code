@@ -97,22 +97,90 @@ class AgentManager:
         self,
         observations: Dict[str, Any],
         deterministic: bool = False,
+        show_progress: bool = False,
     ) -> Dict[str, tuple]:
         """
         批量执行动作选择
 
+        对于共享策略的agent（同一组），会批量处理观测以提高效率。
+
         Args:
             observations: {agent_id: observation}
             deterministic: 是否使用确定性策略
+            show_progress: 是否显示进度（对于大量agent很有用）
 
         Returns:
             {agent_id: (action, logprob, value)}
         """
         results = {}
-        for agent_id, obs in observations.items():
-            agent = self.get_agent(agent_id)
-            action, logprob, value = agent.act(obs, deterministic=deterministic)
-            results[agent_id] = (action, logprob, value)
+        num_agents = len(observations)
+        
+        # 如果agent数量很多且需要显示进度，输出进度
+        if show_progress:
+            print(f"  正在为 {num_agents} 个agent选择动作...", flush=True)
+        
+        # 如果使用共享策略，按组批量处理
+        if self._has_shared_agents():
+            # 按组组织观测
+            group_observations = {}
+            agent_to_group_map = {}
+            
+            for agent_id, obs in observations.items():
+                group_name = self._agent_to_group.get(agent_id, agent_id)
+                if group_name not in group_observations:
+                    group_observations[group_name] = []
+                group_observations[group_name].append((agent_id, obs))
+                agent_to_group_map[agent_id] = group_name
+            
+            # 对每个组批量处理
+            processed = 0
+            for group_name, agent_obs_list in group_observations.items():
+                # 获取该组的Agent实例（所有agent共享同一个）
+                sample_agent_id = agent_obs_list[0][0]
+                agent = self.get_agent(sample_agent_id)
+                
+                # 提取观测列表
+                obs_list = [obs for _, obs in agent_obs_list]
+                agent_ids_in_group = [aid for aid, _ in agent_obs_list]
+                
+                # 尝试批量处理（如果agent支持批量）
+                try:
+                    # 检查agent是否有批量act方法
+                    if hasattr(agent, "act_batch"):
+                        batch_results = agent.act_batch(obs_list, deterministic=deterministic)
+                        for aid, (action, logprob, value) in zip(agent_ids_in_group, batch_results):
+                            results[aid] = (action, logprob, value)
+                    else:
+                        # 顺序处理（但至少是同一个agent实例，forward pass会更快）
+                        for agent_id, obs in agent_obs_list:
+                            action, logprob, value = agent.act(obs, deterministic=deterministic)
+                            results[agent_id] = (action, logprob, value)
+                except Exception:
+                    # 如果批量处理失败，回退到顺序处理
+                    for agent_id, obs in agent_obs_list:
+                        action, logprob, value = agent.act(obs, deterministic=deterministic)
+                        results[agent_id] = (action, logprob, value)
+                
+                processed += len(agent_obs_list)
+                if show_progress:
+                    print(f"  进度: {processed}/{num_agents} agents (组: {group_name})", end='\r', flush=True)
+            
+            if show_progress:
+                print()  # 换行
+        else:
+            # 没有共享策略，顺序处理每个agent
+            progress_freq = max(10, num_agents // 20)
+            for idx, (agent_id, obs) in enumerate(observations.items()):
+                agent = self.get_agent(agent_id)
+                action, logprob, value = agent.act(obs, deterministic=deterministic)
+                results[agent_id] = (action, logprob, value)
+                
+                if show_progress and (idx + 1) % progress_freq == 0:
+                    print(f"  动作选择进度: {idx + 1}/{num_agents} agents", end='\r', flush=True)
+            
+            if show_progress and num_agents > progress_freq:
+                print()  # 换行
+        
         return results
 
     def learn(
