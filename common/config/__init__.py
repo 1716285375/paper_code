@@ -16,7 +16,7 @@ from common.config.schema import PPOConfig
 from common.config.validator import ConfigValidator, validate_config
 
 __all__ = [
-    "load_config",
+    "load_config",  # 支持as_dict和project_root参数
     "PPOConfig",
     "validate_config",
     "ConfigValidator",

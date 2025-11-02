@@ -1,0 +1,140 @@
+# SMPE²自博弈训练配置 (12 vs 12版本)
+# 结合VAE状态建模、Filter过滤、SimHash内在奖励与自博弈对手池
+# 较小的智能体数量配置，适合快速测试和开发
+# 注意：MAgent2 battle_v4的map_size最小为20，对应12 vs 12的智能体数量
+
+# 环境配置
+env:
+  id: "magent2:battle_v4"
+  kwargs:
+    map_size: 20  # 最小地图尺寸，对应12 vs 12的智能体数量
+    max_cycles: 100  # 适配max_steps_per_episode=100
+    minimap_mode: false
+
+# Agent配置
+agent:
+  type: "smpe"  # SMPE² Agent
+  obs_dim: 845  # 观测维度（通常与地图尺寸相关，map_size=20时的观测维度）
+  action_dim: 21
+  agent_id_dim: 32  # Agent ID嵌入维度
+  
+  # 基础PPO配置（调整为较小规模）
+  encoder:
+    type: "networks/mlp"
+    params:
+      in_dim: 845
+      hidden_dims: [256, 128, 64]  # 减小网络规模
+      use_layer_norm: true
+      dropout: 0.0
+  
+  policy_head:
+    type: "policy_heads/discrete"
+    params:
+      hidden_dims: [64]
+  
+  value_head:
+    type: "value_heads/mlp"
+    params:
+      hidden_dims: [64]
+  
+  optimizer:
+    type: "optimizers/adam"
+    params:
+      lr: 3e-4
+      scheduler: "linear"
+      warmup_steps: 500  # 减少warmup步数
+      total_steps: 50000  # 减少总步数
+      weight_decay: 0.0
+      max_grad_norm: 0.5
+  
+  # SMPE²模块配置
+  use_vae: true  # 启用VAE状态建模
+  use_filter: true  # 启用Filter过滤
+  use_intrinsic: true  # 启用SimHash内在奖励
+  
+  # VAE配置
+  vae:
+    z_dim: 16  # 潜在变量维度
+    encoder_hidden_dims: [64, 32]
+    decoder_hidden_dims: [32, 64]
+    beta_kl: 1e-3  # KL散度权重
+    rec_coef: 1.0  # 观测重构权重
+    action_rec_coef: 1.5  # 动作重构权重
+  
+  # Filter配置
+  filter:
+    num_filters: 8  # 过滤器数量
+    use_gumbel: false  # 使用Sigmoid而非Gumbel
+    temperature: 0.5
+    tau: 0.01  # 目标网络软更新系数
+  
+  # SimHash内在奖励配置
+  intrinsic_reward:
+    hash_bits: 512
+    bucket_size: 65536  # 2^16
+    r_max: 0.2
+    normalize: true
+
+# 训练配置（调整为较小规模）
+training:
+  num_updates: 5000  # 减少更新次数
+  max_steps_per_episode: 100  # 减小episode步数以加快训练
+  num_epochs: 4
+  batch_size: 512  # batch size保持512（适应较短的episode）
+  clip_coef: 0.2
+  value_coef: 0.5
+  entropy_coef: 0.01
+  gamma: 0.99
+  gae_lambda: 0.95
+  
+  # SMPE²特定配置
+  vae_update_freq: 100  # 减少VAE更新频率（适配max_steps_per_episode=100）
+  vae_epochs: 3  # VAE训练轮数
+  filter_update_freq: 1  # Filter更新频率（每步）
+  
+  # 组合奖励权重
+  intrinsic_reward_beta1: 0.1  # SimHash内在奖励权重（可调整0.1-0.3）
+  intrinsic_reward_beta2: 0.05  # 自博弈奖励权重（可调整0.05-0.2）
+  intrinsic_warmup_steps: 2000  # 减少warm-up步数（适配较短的episode）
+  
+  # 自博弈配置
+  self_play_update_freq: 10  # 每10个更新更新对手策略
+  main_team: "team_red"
+  opponent_team: "team_blue"
+  
+  # 对手池配置
+  opponent_pool:
+    strategy: "pfsp"  # "uniform", "elo", "pfsp"
+    size: 10  # 减小对手池大小
+  snapshot_freq: 5000  # 减少快照频率（适配较短的episode）
+  
+  # 评估和保存
+  eval_freq: 25  # 更频繁的评估
+  save_freq: 50  # 更频繁的保存
+  log_freq: 10
+
+# 设备配置
+device: "cuda"  # "cuda" 或 "cpu"
+
+# 随机种子
+seed: 42
+
+# 实验跟踪配置
+tracking:
+  enabled: true
+  wandb:
+    enabled: false
+    project: "magent2-smpe-selfplay-12v12"  # 12 vs 12版本的项目名称
+    name: null  # 自动生成：环境名_时间戳
+  tensorboard:
+    enabled: true
+    project: "magent2-smpe-selfplay-12v12"
+    name: "smpe_selfplay_12v12"
+
+# 数据保存配置
+data_saving:
+  enabled: true
+  output_dir: "training_data_12v12"  # 12 vs 12版本的输出目录
+  format: "both"  # "json", "csv", "both"
+  record_video: false  # 是否录制评估视频
+

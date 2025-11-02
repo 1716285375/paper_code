@@ -16,36 +16,19 @@ from datetime import datetime
 from pathlib import Path
 
 import torch
-import yaml
 
 # 添加项目根目录到路径（从examples目录向上找项目根目录）
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from algorithms.ppo.self_play_trainer import SelfPlayPPOTrainer
+from common.config import load_config
 from common.tracking import ExperimentTracker, TensorBoardTracker, WandBTracker
 from common.utils.data_manager import TrainingDataManager
 from common.utils.logging import LoggerManager
 from common.video import VideoRecorder
 from core.agent import AgentManager
 from environments.factory import make_env
-
-
-def load_config(config_path: str) -> dict:
-    """
-    加载配置文件
-
-    Args:
-        config_path: 配置文件路径（相对于项目根目录或绝对路径）
-    """
-    # 如果是相对路径，则相对于项目根目录
-    config_file = Path(config_path)
-    if not config_file.is_absolute():
-        config_file = project_root / config_path
-
-    with open(config_file, "r", encoding="utf-8") as f:
-        config = yaml.safe_load(f)
-    return config
 
 
 def setup_seed(seed: int) -> None:
@@ -81,8 +64,8 @@ def main():
 
     args = parser.parse_args()
 
-    # 加载配置
-    config = load_config(args.config)
+    # 加载配置（使用common/config模块的加载函数，返回字典格式）
+    config = load_config(args.config, as_dict=True, project_root=project_root)
 
     # 设置随机种子
     seed = config.get("seed", 42)

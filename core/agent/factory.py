@@ -119,7 +119,7 @@ def build_agent_from_config(
         )
     elif agent_type == "ppo_penalty":
         # 延迟导入以避免循环导入
-        from algorithms.ppo.agent import PPOPenaltyAgent
+        from core.agent.ppo_penalty import PPOPenaltyAgent
 
         return PPOPenaltyAgent(
             obs_dim=obs_dim,
@@ -127,7 +127,19 @@ def build_agent_from_config(
             config=agent_config,
             device=device,
         )
+    elif agent_type == "smpe":
+        # 延迟导入以避免循环导入
+        from core.agent.smpe_agent import SMPEPolicyAgent
+
+        return SMPEPolicyAgent(
+            obs_dim=obs_dim,
+            action_dim=action_dim,
+            config=agent_config,
+            device=device,
+            agent_id=0,  # 默认agent_id，实际使用时应该通过AgentManager设置
+            agent_id_dim=agent_config.get("agent_id_dim", 32),
+        )
     else:
         raise ValueError(
-            f"Unknown agent type: {agent_type}. Available: ['ppo', 'ppo_penalty']"
+            f"Unknown agent type: {agent_type}. Available: ['ppo', 'ppo_penalty', 'smpe']"
         )

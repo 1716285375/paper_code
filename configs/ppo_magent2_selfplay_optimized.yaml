@@ -7,7 +7,7 @@ env:
   name: "magent2:battle_v4"
   map_size: 45
   minimap_mode: false
-  max_cycles: 500
+  max_cycles: 100  # 适配max_steps_per_episode=100
   step_reward: -0.005
   dead_penalty: -0.1
   attack_penalty: -0.1
@@ -50,9 +50,9 @@ agent:
 # 训练配置
 training:
   num_updates: 10000
-  max_steps_per_episode: 500
+  max_steps_per_episode: 100  # 减小episode步数以加快训练
   num_epochs: 4
-  batch_size: 2048
+  batch_size: 1024  # 减小batch size（适配较短的episode，从2048减半）
   clip_coef: 0.2
   value_coef: 0.5
   entropy_coef: 0.01

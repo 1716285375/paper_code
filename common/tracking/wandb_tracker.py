@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Dict, Optional, Union
 
 import numpy as np
@@ -69,18 +70,128 @@ class WandBTracker(BaseTracker):
             print("Warning: wandb is not available, skipping initialization")
             return
 
+        # 清理配置，确保所有值都是Pydantic兼容的基础类型
+        # 这样可以避免Pydantic警告（关于Field()的repr和frozen属性）
+        cleaned_config = self._clean_config_for_wandb(config) if config is not None else None
+
         # 准备初始化参数
         init_kwargs = {"project": project, **kwargs}
 
         if name is not None:
             init_kwargs["name"] = name
 
-        if config is not None:
-            init_kwargs["config"] = config
+        if cleaned_config is not None:
+            init_kwargs["config"] = cleaned_config
 
-        # 初始化wandb运行
-        self._run = wandb.init(**init_kwargs)
+        # 抑制Pydantic的内部警告（这些警告来自wandb内部使用Pydantic）
+        # 这些警告不影响功能，只是Pydantic的内部实现细节
+        import warnings
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message=".*UnsupportedFieldAttributeWarning.*",
+                category=UserWarning,
+            )
+            # 初始化wandb运行
+            self._run = wandb.init(**init_kwargs)
+        
         self._initialized = True
+
+    def _clean_config_for_wandb(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        清理配置字典，确保所有值都是wandb/Pydantic兼容的基础类型
+        
+        递归处理嵌套字典，将复杂对象转换为简单类型（str, int, float, bool, list, dict）
+        这样可以避免Pydantic的Field()警告
+        
+        Args:
+            config: 原始配置字典
+            
+        Returns:
+            清理后的配置字典
+        """
+        if config is None:
+            return None
+        
+        cleaned = {}
+        for key, value in config.items():
+            cleaned[key] = self._clean_value(value)
+        
+        return cleaned
+
+    def _clean_value(self, value: Any) -> Any:
+        """
+        清理单个值，确保是基础类型（wandb/Pydantic兼容）
+        
+        处理：
+        - numpy标量（numpy.int64, numpy.float64等）-> Python原生类型
+        - numpy数组 -> list
+        - Path对象 -> str
+        - 其他复杂对象 -> str
+        
+        Args:
+            value: 待清理的值
+            
+        Returns:
+            清理后的值（str, int, float, bool, None, list, dict之一）
+        """
+        # None值直接返回
+        if value is None:
+            return None
+        
+        # 先处理numpy类型（必须在Python基础类型检查之前）
+        try:
+            import numpy as np
+            if isinstance(value, np.ndarray):
+                # numpy数组转换为Python列表
+                return value.tolist()
+            elif isinstance(value, (np.integer, np.floating)):
+                # numpy标量转换为Python原生类型
+                return value.item()
+            elif isinstance(value, np.bool_):
+                # numpy bool转换为Python bool
+                return bool(value)
+        except (ImportError, AttributeError):
+            pass
+        
+        # Python基础类型直接返回
+        if isinstance(value, (str, int, float, bool)):
+            return value
+        
+        # 列表和元组：递归清理每个元素
+        if isinstance(value, (list, tuple)):
+            return [self._clean_value(v) for v in value]
+        
+        # 字典：递归清理
+        if isinstance(value, dict):
+            return self._clean_config_for_wandb(value)
+        
+        # Path对象转换为字符串
+        if isinstance(value, Path):
+            return str(value)
+        
+        
+        # torch张量（如果存在）
+        try:
+            import torch
+            if isinstance(value, torch.Tensor):
+                # 张量转换为Python列表（如果是标量则转换为Python类型）
+                if value.numel() == 1:
+                    return value.item()
+                else:
+                    return value.detach().cpu().numpy().tolist()
+        except (ImportError, AttributeError):
+            pass
+        
+        # 其他类型：尝试转换为JSON可序列化类型
+        try:
+            import json
+            # 先尝试JSON序列化测试
+            json.dumps(value)
+            return value
+        except (TypeError, ValueError):
+            # 无法序列化，转换为字符串
+            return str(value)
 
     def log(self, metrics: Dict[str, Union[int, float]], step: Optional[int] = None) -> None:
         """

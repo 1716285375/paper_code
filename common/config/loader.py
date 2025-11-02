@@ -11,28 +11,56 @@
 """
 # ------------------------------------------------------------
 
-from typing import Any
+from pathlib import Path
+from typing import Any, Dict, Union
 
 import yaml
 
 from .schema import PPOConfig
 
 
-def load_config(path: str) -> PPOConfig:
+def load_config(
+    path: str, 
+    as_dict: bool = False,
+    project_root: Union[str, Path, None] = None
+) -> Union[PPOConfig, Dict[str, Any]]:
     """
     从YAML文件加载配置
 
     Args:
-        path: YAML配置文件路径
+        path: YAML配置文件路径（相对路径或绝对路径）
+        as_dict: 如果True，返回字典；如果False，返回PPOConfig对象
+        project_root: 项目根目录路径（用于解析相对路径），如果None则从当前文件推断
 
     Returns:
-        PPOConfig配置对象
+        如果as_dict=True，返回配置字典；否则返回PPOConfig配置对象
 
     Raises:
         FileNotFoundError: 如果配置文件不存在
         yaml.YAMLError: 如果YAML文件格式错误
-        TypeError: 如果配置数据无法转换为PPOConfig
+        TypeError: 如果配置数据无法转换为PPOConfig（且as_dict=False）
     """
-    with open(path, "r", encoding="utf-8") as f:
+    # 解析路径
+    config_file = Path(path)
+    if not config_file.is_absolute():
+        # 相对路径：如果提供了project_root，使用它；否则尝试从当前文件推断
+        if project_root is not None:
+            root = Path(project_root)
+        else:
+            # 从当前文件位置推断项目根目录（common/config/loader.py -> 项目根目录）
+            root = Path(__file__).parent.parent.parent
+        config_file = root / path
+    
+    # 确保文件存在
+    if not config_file.exists():
+        raise FileNotFoundError(f"配置文件不存在: {config_file}")
+    
+    # 加载YAML
+    with open(config_file, "r", encoding="utf-8") as f:
         data = yaml.safe_load(f)
-    return PPOConfig(**data)
+    
+    # 根据as_dict参数返回
+    if as_dict:
+        return data
+    else:
+        return PPOConfig(**data)

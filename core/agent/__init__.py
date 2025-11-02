@@ -14,6 +14,8 @@
 from core.agent.factory import build_agent_from_config
 from core.agent.manager import AgentManager, create_agent_manager_from_config
 from core.agent.pool import AgentPool, AgentPoolContext
+from core.agent.ppo_penalty import PPOPenaltyAgent
+from core.agent.smpe_agent import SMPEPolicyAgent
 from core.agent.utils import ConfigurablePPOAgent
 from core.agent.utils_extras import (
     aggregate_metrics,
@@ -64,6 +66,8 @@ __all__ = [
     # 基类和实现
     "Agent",
     "ConfigurablePPOAgent",
+    "PPOPenaltyAgent",
+    "SMPEPolicyAgent",
     # 管理器
     "AgentManager",
     "create_agent_manager_from_config",

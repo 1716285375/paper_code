@@ -1,13 +1,13 @@
 # ------------------------------------------------------------
 # -*- coding: utf-8 -*-
 """
-@File           : agent.py
+@File           : ppo_penalty.py
 @Author         : Jie
 @CopyRight      : Copyright © 2025 Jie. All Rights Reserved
 @Create Date    : 2025-11-02 00:00
 @Update Date    :
-@Description    : PPO算法变体的Agent实现
-包含PPO-Penalty等PPO变体的Agent实现
+@Description    : PPO-Penalty Agent实现
+PPO的Penalty变体，使用自适应KL惩罚而非clipping
 """
 # ------------------------------------------------------------
 
