@@ -1,0 +1,33 @@
+{
+  "metadata": {
+    "total_updates": 2,
+    "metrics": [
+      "policy_loss",
+      "value_loss",
+      "entropy",
+      "total_loss",
+      "episode_reward",
+      "episode_length"
+    ]
+  },
+  "data": [
+    {
+      "step": 10,
+      "policy_loss": 0.01092139013261693,
+      "value_loss": 0.03917389829803142,
+      "entropy": 2.604834533883975,
+      "total_loss": 0.004459994888971918,
+      "episode_reward": -1332.9000312807038,
+      "episode_length": 81000
+    },
+    {
+      "step": 20,
+      "policy_loss": -0.09298135112347573,
+      "value_loss": 0.041786887570812656,
+      "entropy": 2.5854068165788284,
+      "total_loss": -0.09794197495614823,
+      "episode_reward": -1029.8000185471028,
+      "episode_length": 81000
+    }
+  ]
+}

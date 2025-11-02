@@ -1,0 +1,174 @@
+# ============================================
+# Python
+# ============================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+pip-log.txt
+pip-delete-this-directory.txt
+.python-version
+
+# 虚拟环境
+venv/
+env/
+ENV/
+.venv/
+conda-meta/
+
+# ============================================
+# 项目特定目录（训练产生的文件）
+# ============================================
+# 训练日志
+logs/
+*.log
+
+# 实验跟踪数据
+wandb/
+runs/
+
+# 检查点和模型
+checkpoints/
+*.pt
+*.pth
+*.ckpt
+*.pkl
+
+# 临时数据和缓存
+*.tmp
+*.bak
+*.cache
+
+# ============================================
+# IDE 和编辑器
+# ============================================
+# PyCharm / IntelliJ IDEA
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# VSCode
+.vscode/
+*.code-workspace
+
+# Vim / Emacs
+*.swp
+*.swo
+*~
+.*.sw?
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# ============================================
+# 操作系统
+# ============================================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# Linux
+.directory
+.Trash-*
+
+# ============================================
+# Jupyter Notebook
+# ============================================
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# ============================================
+# 测试和覆盖率
+# ============================================
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.pytest_cache/
+.hypothesis/
+nosetests.xml
+coverage.xml
+*.cover
+
+# ============================================
+# 文档构建
+# ============================================
+docs/_build/
+docs/.doctrees/
+*.pdf
+!docs/papers/*.pdf  # 保留论文PDF（如果需要）
+# 保留docs目录下的markdown和其他文档文件
+!docs/**/*.md
+!docs/**/*.txt
+
+# ============================================
+# 数据文件（根据项目需求调整）
+# ============================================
+# 大数据集文件（通常不提交到git）
+*.h5
+*.hdf5
+*.npy
+*.npz
+*.mat
+data/raw/
+data/processed/
+
+# 视频文件（训练过程录制）
+*.mp4
+*.avi
+*.mov
+*.mkv
+
+# CSV数据文件（如果很大，可能需要忽略）
+# 根据实际情况决定是否取消注释
+# docs/*.csv
+
+# ============================================
+# 项目特定
+# ============================================
+# 旧代码和示例代码（通常不跟踪）
+zip/
+
+# 脚本目录本身可以跟踪，但忽略某些输出文件
+# scripts/ 保留，但忽略脚本生成的文件
+scripts/**/*.pyc
+scripts/**/__pycache__/
+scripts/**/*.log
+
+# 环境配置（如果包含敏感信息）
+.env
+.env.local
+.env.*.local
+
+# ============================================
+# 其他临时文件
+# ============================================
+*.pyc
+*.pyo
+*.pyd
+.cache/
+*.orig
+*.rej
+
+
+exammples/checkpoints/
+exammples/training_data/
+examples/**.md
+
+docs/

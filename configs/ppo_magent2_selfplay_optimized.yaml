@@ -1,0 +1,109 @@
+# PPO自博弈训练配置 - MAgent2 battle_v4环境（优化版）
+# 修复了评估指标不变和奖励下降的问题
+# 优化了自博弈更新频率、学习率和策略池使用
+
+# 环境配置
+env:
+  name: "magent2:battle_v4"
+  map_size: 45
+  minimap_mode: false
+  max_cycles: 500
+  step_reward: -0.005
+  dead_penalty: -0.1
+  attack_penalty: -0.1
+  attack_opponent_reward: 0.2
+
+# Agent配置
+agent:
+  type: "ppo"
+  obs_dim: 845  # battle_v4的观测维度（如果minimap_mode=false）
+  action_dim: 21  # battle_v4的动作空间维度
+  
+  encoder:
+    type: "networks/mlp"
+    params:
+      in_dim: 845
+      hidden_dims: [512, 256, 128]
+      use_layer_norm: true
+      dropout: 0.0
+  
+  policy_head:
+    type: "policy_heads/discrete"
+    params:
+      hidden_dims: [64]
+  
+  value_head:
+    type: "value_heads/mlp"
+    params:
+      hidden_dims: [64]
+  
+  optimizer:
+    type: "optimizers/adam"
+    params:
+      lr: 1e-4  # 降低学习率，提高训练稳定性
+      scheduler: "linear"
+      warmup_steps: 1000
+      total_steps: 100000
+      weight_decay: 0.0
+      max_grad_norm: 0.5  # 梯度裁剪，防止梯度爆炸
+
+# 训练配置
+training:
+  num_updates: 10000
+  max_steps_per_episode: 500
+  num_epochs: 4
+  batch_size: 2048
+  clip_coef: 0.2
+  value_coef: 0.5
+  entropy_coef: 0.01
+  gamma: 0.99
+  gae_lambda: 0.95
+  
+  # 自博弈配置（优化）
+  self_play_update_freq: 5  # 每5个更新更新一次对手策略（更频繁，避免过度适应）
+  self_play_mode: "pool"  # 使用策略池（增加对手多样性）
+  use_policy_pool: true  # 启用策略池（推荐）
+  policy_pool_size: 10  # 策略池大小（如果启用）
+  
+  # 主团队和对手团队（在Magent2中通常是"team_red"和"team_blue"）
+  main_team: "team_red"
+  opponent_team: "team_blue"
+  
+  # 评估和保存
+  eval_freq: 50
+  save_freq: 100
+  log_freq: 10
+
+# 设备配置
+device: "cuda"  # "cuda" 或 "cpu"
+
+# 随机种子
+seed: 42
+
+# 实验跟踪配置（wandb/tensorboard）
+tracking:
+  enabled: true  # 是否启用实验跟踪
+  
+  # WandB配置（可选）
+  wandb:
+    enabled: true  # 是否启用WandB
+    project: "magent2-selfplay"  # WandB项目名称
+    name: null  # 运行名称（如果为null则自动生成）
+  
+  # TensorBoard配置（可选）
+  tensorboard:
+    enabled: true  # 是否启用TensorBoard
+    experiment_name: "magent2-selfplay"  # 实验名称
+
+# 训练数据保存配置（用于本地分析和绘图）
+data_saving:
+  enabled: true  # 是否启用数据保存
+  output_dir: "training_data"  # 数据保存目录（相对于项目根目录）
+  format: "both"  # 保存格式："json", "csv", "both"
+  
+  # 视频录制配置
+  record_video:
+    enabled: false  # 是否录制评估episode的视频（会增加训练时间，建议在关键评估点手动启用）
+    fps: 30  # 视频帧率
+    # 注意：需要环境支持render(mode="rgb_array")
+

@@ -1,0 +1,177 @@
+# Pre-commit 本地配置（无需网络下载）
+# 使用系统中已安装的工具，适合网络环境受限的情况
+#
+# 使用方法：
+#   pre-commit run --config .pre-commit-config.local.yaml --all-files
+#
+# 或者安装为 git hooks：
+#   pre-commit install --config .pre-commit-config.local.yaml
+#
+# 注意：此配置使用本地已安装的工具，不需要网络连接
+# 如果某些工具未安装，请先安装：
+#   pip install black isort flake8 bandit pydocstyle autoflake
+#   pip install flake8-docstrings flake8-bugbear
+
+repos:
+  # ============ 本地工具（无需下载）============
+  - repo: local
+    hooks:
+      # ============ Python 代码格式化 ============
+      # Black 代码格式化
+      - id: black
+        name: black
+        entry: black
+        language: system
+        args: [--line-length=100]
+        types: [python]
+        exclude: ^(zip/|test/logs/|__pycache__/|\.venv/|venv/|.*/migrations/|build/|dist/)
+        description: "自动格式化Python代码"
+      
+      # isort 导入排序
+      - id: isort
+        name: isort
+        entry: isort
+        language: system
+        args: [--profile=black, --line-length=100, --skip-glob=*/migrations/*]
+        types: [python]
+        exclude: ^(zip/|test/logs/|__pycache__/|\.venv/|venv/|.*/migrations/|build/|dist/)
+        description: "自动排序和格式化import语句"
+      
+      # ============ Python 代码检查 ============
+      # flake8 代码检查
+      - id: flake8
+        name: flake8
+        entry: flake8
+        language: system
+        args: [
+          --max-line-length=100,
+          --extend-ignore=E203,  # 与black兼容
+          W503,                   # 与black兼容（运算符换行）
+          E501,                   # 行长度由black处理
+          F401,                   # 未使用的导入（由autoflake处理）
+          F811,                   # 重复导入（由autoflake处理）
+          --exclude=__pycache__,zip,test/logs,.git,venv,.venv,migrations,
+          --per-file-ignores=__init__.py:F401,F403  # __init__.py允许未使用的导入
+        ]
+        types: [python]
+        exclude: ^(zip/|test/logs/|__pycache__/|\.venv/|venv/|.*/migrations/|build/|dist/)
+        additional_dependencies: []  # 本地模式不需要额外依赖
+        description: "检查Python代码风格和潜在错误"
+      
+      # ============ Python 未使用代码清理 ============
+      # autoflake 自动移除未使用的导入和变量
+      - id: autoflake
+        name: autoflake
+        entry: autoflake
+        language: system
+        args: [
+          --in-place,
+          --remove-all-unused-imports,
+          --remove-unused-variables,
+          --ignore-init-module-imports,  # 保护__init__.py中的导入
+          --remove-duplicate-keys,
+          --recursive
+        ]
+        types: [python]
+        exclude: ^(zip/|test/logs/|__pycache__/|\.venv/|venv/|.*/migrations/|build/|dist/)
+        description: "自动移除未使用的导入和变量"
+      
+      # ============ 安全检查 ============
+      # bandit 安全漏洞检查
+      - id: bandit
+        name: bandit
+        entry: bandit
+        language: system
+        args: [-r, ., -ll, --skip, zip,test/logs]
+        types: [python]
+        exclude: ^(test/|tests/|examples/|zip/|.*test.*\.py|.*/migrations/|build/|dist/)
+        description: "检测Python代码中的安全漏洞"
+      
+      # ============ 文档字符串检查 ============
+      # pydocstyle 文档字符串检查
+      - id: pydocstyle
+        name: pydocstyle
+        entry: pydocstyle
+        language: system
+        args: [
+          --convention=google,
+          --add-ignore=D100,  # 缺少模块文档字符串
+          D104,                # 缺少包文档字符串
+          D105,                # 缺少魔术方法文档字符串
+          D107,                # 缺少__init__文档字符串（可选）
+        ]
+        types: [python]
+        exclude: ^(test/|tests/|examples/|zip/|.*test.*\.py|.*/__init__\.py|.*/migrations/|build/|dist/)
+        description: "检查文档字符串是否符合Google风格"
+      
+      # ============ 文件格式检查 ============
+      # check-yaml YAML格式检查（使用辅助脚本）
+      - id: check-yaml
+        name: check-yaml
+        entry: python scripts/precommit_hooks.py check-yaml
+        language: system
+        types: [yaml]
+        exclude: ^(.*\.lock|requirements.*\.txt)
+        description: "验证YAML文件格式"
+      
+      # check-json JSON格式检查（使用辅助脚本）
+      - id: check-json
+        name: check-json
+        entry: python scripts/precommit_hooks.py check-json
+        language: system
+        types: [json]
+        exclude: ^(.*/node_modules/|.*\.min\.json)
+        description: "验证JSON文件格式"
+      
+      # ============ 文件内容检查 ============
+      # trailing-whitespace 尾随空格检查（使用辅助脚本）
+      - id: trailing-whitespace
+        name: trailing-whitespace
+        entry: python scripts/precommit_hooks.py trailing-whitespace
+        language: system
+        exclude: ^(.*\.(csv|md|txt)|requirements.*\.txt|\.gitignore|LICENSE)
+        description: "检测行尾空格"
+      
+      # end-of-file-fixer 文件末尾换行符检查（使用辅助脚本）
+      - id: end-of-file-fixer
+        name: end-of-file-fixer
+        entry: python scripts/precommit_hooks.py end-of-file-fixer
+        language: system
+        exclude: ^(.*\.(csv|md|txt)|requirements.*\.txt|LICENSE|CHANGELOG)
+        description: "确保文件以换行符结尾"
+      
+      # check-added-large-files 大文件检查（使用辅助脚本）
+      - id: check-added-large-files
+        name: check-added-large-files
+        entry: python scripts/precommit_hooks.py large-files
+        language: system
+        description: "防止提交超过1MB的文件"
+      
+      # check-merge-conflict 合并冲突标记检查（使用辅助脚本）
+      - id: check-merge-conflict
+        name: check-merge-conflict
+        entry: python scripts/precommit_hooks.py merge-conflict
+        language: system
+        description: "检测未解决的合并冲突标记"
+      
+      # debug-statements 调试语句检查（使用辅助脚本）
+      - id: debug-statements
+        name: debug-statements
+        entry: python scripts/precommit_hooks.py debug-statements
+        language: system
+        types: [python]
+        exclude: ^(test/|tests/|.*test.*\.py)
+        description: "检测调试语句（pdb, ipdb等）"
+
+# ============ 全局配置 ============
+default_language_version:
+  python: python3
+
+# 默认阶段
+default_stages: [pre-commit]
+
+# 最小pre-commit版本
+minimum_pre_commit_version: '3.0.0'
+
+# 失败时是否快速失败（遇到第一个错误就停止）
+fail_fast: false
