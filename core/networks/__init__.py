@@ -13,6 +13,7 @@
 
 from .base import BaseEncoder
 from .cnn import CNNEncoder
+from .gru import GRUEncoder
 from .lstm import LSTMEncoder
 from .mlp import MLPEncoder
 from .transformer import TransformerEncoder
@@ -22,5 +23,6 @@ __all__ = [
     "MLPEncoder",
     "CNNEncoder",
     "LSTMEncoder",
+    "GRUEncoder",
     "TransformerEncoder",
 ]

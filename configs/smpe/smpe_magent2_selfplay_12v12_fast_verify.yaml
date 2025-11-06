@@ -1,0 +1,154 @@
+# SMPE²自博弈训练配置 - 快速验证版本
+# 针对8GB显存优化，适合快速原型验证和调试
+# 配置说明：
+#   - map_size=20: 对应12 vs 12的智能体数量（24个agents）
+#   - state_dim: 使用环境提供的全局state维度（20×20×5=2000），而不是观测拼接（845×24=20280）
+#   - 所有模型参数已最小化以节省显存
+#   - 训练参数已优化以加快验证速度
+
+# 环境配置
+env:
+  id: "magent2:battle_v4"
+  kwargs:
+    map_size: 20  # 最小地图尺寸，对应12 vs 12的智能体数量（24个agents）
+    max_cycles: 30  # Episode最大步数（最小化以加快训练）
+    minimap_mode: false  # 不使用小地图模式
+
+# Agent配置
+agent:
+  type: "smpe"  # SMPE² Agent
+  obs_dim: 845  # 观测维度（map_size=20时的标准观测维度：13×13×5=845）
+  action_dim: 21  # 动作空间维度（Magent2 battle_v4标准）
+  agent_id_dim: 8  # Agent ID嵌入维度（最小化以节省显存）
+  
+  # 基础PPO配置（最小化网络规模）
+  encoder:
+    type: "networks/mlp"
+    params:
+      in_dim: 845
+      hidden_dims: [64, 32]  # 最小网络规模（原：[256, 128, 64]）
+      use_layer_norm: true
+      dropout: 0.0
+  
+  policy_head:
+    type: "policy_heads/discrete"
+    params:
+      hidden_dims: [16]  # 最小化（原：[64]）
+  
+  value_head:
+    type: "value_heads/mlp"
+    params:
+      hidden_dims: [16]  # 最小化（原：[64]）
+  
+  optimizer:
+    type: "optimizers/adam"
+    params:
+      lr: 3e-4  # 学习率
+      scheduler: "linear"  # 线性学习率调度
+      warmup_steps: 100  # Warm-up步数（最小化）
+      total_steps: 10000  # 总训练步数（适配快速验证）
+      weight_decay: 0.0
+      max_grad_norm: 0.5  # 梯度裁剪
+  
+  # SMPE²模块配置
+  use_vae: true  # 启用VAE状态建模
+  use_filter: true  # 启用Filter过滤（可以暂时禁用以进一步节省显存）
+  use_intrinsic: true  # 启用SimHash内在奖励
+  
+  # State维度说明：
+  #   - 环境提供的state: map_size × map_size × 5 = 20 × 20 × 5 = 2000
+  #   - 观测拼接的state: obs_dim × n_agents = 845 × 24 = 20280
+  #   注意：脚本会自动从环境获取state维度，这里仅作为参考
+  state_dim: 2000  # 全局状态维度（环境提供的state，20×20×5=2000）
+  n_agents: 24  # 智能体数量（12 vs 12，共24个）
+  
+  # VAE配置（最小化模型规模）
+  vae:
+    embedding_shape: 4  # 潜在变量维度（最小化，原：16）
+    encoder_hidden_dims: [16, 8]  # 编码器隐藏层（最小化，原：[64, 32]）
+    decoder_hidden_dims: [8, 16]  # 解码器隐藏层（最小化，原：[32, 64]）
+    beta_kl: 1e-3  # KL散度权重
+    rec_coef: 1.0  # 观测重构权重
+    action_rec_coef: 1.0  # 动作重构权重（最小化，原：1.5）
+  
+  # Filter配置（最小化）
+  filter:
+    num_filters: 2  # 过滤器数量（最小化，原：8）
+    use_gumbel: false  # 使用Sigmoid而非Gumbel
+    temperature: 0.5
+    tau: 0.01  # 目标网络软更新系数
+  
+  # SimHash内在奖励配置（最小化）
+  intrinsic_reward:
+    hash_bits: 128  # Hash位数（最小化，原：512）
+    bucket_size: 16384  # Bucket大小（2^14，最小化，原：65536）
+    r_max: 0.2  # 最大内在奖励
+    normalize: true  # 归一化
+
+# 训练配置（快速验证优化）
+training:
+  num_updates: 500  # 更新次数（快速验证，原：5000+）
+  max_steps_per_episode: 30  # Episode最大步数（最小化以加快训练）
+  num_epochs: 1  # 训练轮数（最小化，原：4）
+  batch_size: 64  # Batch size（最小化以节省显存，原：512）
+  clip_coef: 0.2  # PPO裁剪系数
+  value_coef: 0.5  # Value损失权重
+  entropy_coef: 0.01  # 熵损失权重
+  gamma: 0.99  # 折扣因子
+  gae_lambda: 0.95  # GAE lambda参数
+  
+  # SMPE²特定配置
+  vae_update_freq: 100  # VAE更新频率（每100环境步更新一次，减少以加快训练）
+  vae_epochs: 1  # VAE训练轮数（最小化，原：3）
+  vae_batch_size: 32  # VAE训练batch size（最小化以节省显存）
+  filter_update_freq: 5  # Filter更新频率（每5步更新一次，减少以加快训练）
+  
+  # 组合奖励权重
+  intrinsic_reward_beta1: 0.1  # SimHash内在奖励权重
+  intrinsic_reward_beta2: 0.05  # 自博弈奖励权重
+  intrinsic_warmup_steps: 200  # 内在奖励warm-up步数（最小化，原：2000）
+  
+  # 自博弈配置
+  self_play_update_freq: 20  # 对手策略更新频率（每20个更新更新一次）
+  main_team: "team_red"  # 主训练团队
+  opponent_team: "team_blue"  # 对手团队
+  
+  # 对手池配置
+  opponent_pool:
+    strategy: "pfsp"  # 对手采样策略：uniform, elo, pfsp
+    size: 3  # 对手池大小（最小化，原：10）
+  snapshot_freq: 1000  # 策略快照频率（每1000环境步保存一次）
+  
+  # 评估和保存配置
+  eval_freq: 50  # 评估频率（每50个更新评估一次）
+  save_freq: 100  # 保存频率（每100个更新保存一次）
+  log_freq: 10  # 日志频率（每10个更新记录一次）
+
+# 设备配置
+device: "cuda"  # 使用CUDA（如果可用），否则使用CPU
+
+# 随机种子
+seed: 42
+
+# 实验跟踪配置
+tracking:
+  enabled: true
+  wandb:
+    enabled: false  # 禁用WandB以节省资源（快速验证时）
+    project: "magent2-smpe-selfplay-fast"
+    name: null  # 自动生成：环境名_时间戳
+  tensorboard:
+    enabled: true  # 启用TensorBoard（轻量级）
+    project: "smpe-fast-verify"
+    name: "fast_verify_8gb"
+
+# 数据保存配置
+data_saving:
+  enabled: true  # 启用数据保存
+  # output_dir: "training_data/smpe_magent2_selfplay_12v12_fast_verify"  # 可选：自定义训练数据目录
+  # 如果不指定，脚本会自动根据配置文件名生成：training_data/{config_name}
+  format: "json"  # 保存格式：json（节省空间），可选：csv, both
+
+# Checkpoint配置
+# checkpoint_dir: "checkpoints/smpe_magent2_selfplay_12v12_fast_verify"  # 可选：自定义checkpoint目录
+# 如果不指定，脚本会自动根据配置文件名生成：checkpoints/{config_name}

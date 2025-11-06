@@ -11,11 +11,13 @@
 """
 # ------------------------------------------------------------
 
-from algorithms.mappo.trainer import MAPPOTrainer
-from algorithms.mappo.smpe_self_play_trainer import SMPESelfPlayTrainer
+from algorithms.mappo.trainers.base_trainer import MAPPOTrainer
+from algorithms.mappo.trainers.self_play_trainer import SelfPlayMAPPOTrainer
+from algorithms.mappo.config import MAPPOConfig
 
 __all__ = [
     "MAPPOTrainer",
-    "SMPESelfPlayTrainer",
+    "SelfPlayMAPPOTrainer",
+    "MAPPOConfig",
 ]
 

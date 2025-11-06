@@ -1,0 +1,152 @@
+# SMPE²自博弈训练配置 - 8GB显存优化版本
+# 针对RTX 4060 Ti (8GB) 的快速原型验证配置
+# 优化策略：减小模型、batch size、rollout长度，使用梯度累积
+
+# 环境配置
+env:
+  id: "magent2:battle_v4"
+  kwargs:
+    map_size: 20  # 最小地图尺寸，对应12 vs 12的智能体数量
+    max_cycles: 50  # 减少episode长度以节省显存
+    minimap_mode: false
+
+# Agent配置
+agent:
+  type: "smpe"  # SMPE² Agent
+  obs_dim: 845  # 观测维度
+  action_dim: 21
+  agent_id_dim: 16  # 减少Agent ID嵌入维度（从32到16）
+  
+  # 基础PPO配置（大幅减小网络规模）
+  encoder:
+    type: "networks/mlp"
+    params:
+      in_dim: 845
+      hidden_dims: [128, 64]  # 大幅减小：从[256, 128, 64]到[128, 64]
+      use_layer_norm: true
+      dropout: 0.0
+  
+  policy_head:
+    type: "policy_heads/discrete"
+    params:
+      hidden_dims: [32]  # 减小：从[64]到[32]
+  
+  value_head:
+    type: "value_heads/mlp"
+    params:
+      hidden_dims: [32]  # 减小：从[64]到[32]
+  
+  optimizer:
+    type: "optimizers/adam"
+    params:
+      lr: 3e-4
+      scheduler: "linear"
+      warmup_steps: 200  # 减少warmup步数
+      total_steps: 20000  # 减少总步数
+      weight_decay: 0.0
+      max_grad_norm: 0.5
+  
+  # SMPE²模块配置
+  use_vae: true  # 启用VAE状态建模
+  use_filter: true  # 启用Filter过滤
+  use_intrinsic: true  # 启用SimHash内在奖励
+  
+  # VAE配置（减小模型规模）
+  state_dim: 2000  # Magent2环境提供的全局状态维度（20*20*5=2000）
+  n_agents: 24  # 智能体数量（12 vs 12）
+  vae:
+    embedding_shape: 8  # 减小潜在变量维度（从16到8）
+    encoder_hidden_dims: [32, 16]  # 减小VAE编码器（从[64, 32]到[32, 16]）
+    decoder_hidden_dims: [16, 32]  # 减小VAE解码器（从[32, 64]到[16, 32]）
+    beta_kl: 1e-3  # KL散度权重
+    rec_coef: 1.0  # 观测重构权重
+    action_rec_coef: 1.0  # 减小动作重构权重（从1.5到1.0）
+  
+  # Filter配置
+  filter:
+    num_filters: 4  # 减少过滤器数量（从8到4）
+    use_gumbel: false  # 使用Sigmoid而非Gumbel
+    temperature: 0.5
+    tau: 0.01  # 目标网络软更新系数
+  
+  # SimHash内在奖励配置
+  intrinsic_reward:
+    hash_bits: 256  # 减少hash位数（从512到256）
+    bucket_size: 32768  # 减小bucket大小（从65536到32768）
+    r_max: 0.2
+    normalize: true
+
+# 训练配置（大幅减小batch size和rollout长度）
+training:
+  num_updates: 2000  # 减少更新次数（快速验证）
+  max_steps_per_episode: 50  # 大幅减小episode步数（从100到50）
+  num_epochs: 2  # 减少训练轮数（从4到2）
+  batch_size: 128  # 大幅减小batch size（从512到128）
+  clip_coef: 0.2
+  value_coef: 0.5
+  entropy_coef: 0.01
+  gamma: 0.99
+  gae_lambda: 0.95
+  
+  # 梯度累积配置（在显存受限时使用）
+  gradient_accumulation_steps: 4  # 累积4个batch，等效batch_size=512
+  
+  # SMPE²特定配置
+  vae_update_freq: 50  # 减少VAE更新频率（从100到50，适配max_steps_per_episode=50）
+  vae_epochs: 1  # 减少VAE训练轮数（从3到1）
+  vae_batch_size: 64  # VAE训练时使用更小的batch size
+  filter_update_freq: 2  # 减少Filter更新频率（从1到2）
+  
+  # 组合奖励权重
+  intrinsic_reward_beta1: 0.1  # SimHash内在奖励权重
+  intrinsic_reward_beta2: 0.05  # 自博弈奖励权重
+  intrinsic_warmup_steps: 500  # 大幅减少warm-up步数（从2000到500）
+  
+  # 自博弈配置
+  self_play_update_freq: 20  # 减少对手策略更新频率（从10到20）
+  main_team: "team_red"
+  opponent_team: "team_blue"
+  
+  # 对手池配置
+  opponent_pool:
+    strategy: "pfsp"  # "uniform", "elo", "pfsp"
+    size: 5  # 减小对手池大小（从10到5）
+  snapshot_freq: 2000  # 减少快照频率（从5000到2000）
+  
+  # 评估和保存
+  eval_freq: 50  # 评估频率
+  save_freq: 100  # 保存频率
+  log_freq: 10
+
+# 设备配置
+device: "cuda"  # "cuda" 或 "cpu"
+
+# 混合精度训练（如果支持，可以进一步节省显存）
+# mixed_precision: true  # 需要代码支持
+
+# 随机种子
+seed: 42
+
+# 实验跟踪配置
+tracking:
+  enabled: true
+  wandb:
+    enabled: false  # 关闭wandb以节省资源
+    project: "magent2-smpe-selfplay-8gb"
+    name: null
+  tensorboard:
+    enabled: true
+    project: "magent2-smpe-selfplay-8gb"
+    name: "smpe_selfplay_8gb"
+
+# 数据保存配置
+data_saving:
+  enabled: true
+  # output_dir: "training_data/smpe_magent2_selfplay_8gb"  # 可选：自定义训练数据目录
+  # 如果不指定，脚本会自动根据配置文件名生成：training_data/{config_name}
+  format: "json"  # 只保存JSON格式，节省空间
+
+# Checkpoint配置
+# checkpoint_dir: "checkpoints/smpe_magent2_selfplay_8gb"  # 可选：自定义checkpoint目录
+# 如果不指定，脚本会自动根据配置文件名生成：checkpoints/{config_name}
+

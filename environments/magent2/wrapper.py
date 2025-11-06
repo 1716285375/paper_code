@@ -13,7 +13,9 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
+
+import numpy as np
 
 from environments.base import AgentParrelEnv
 
@@ -72,8 +74,16 @@ class Magent2ParallelBase(AgentParrelEnv):
 
         # 创建MAgent2并行环境
         self._env = env_module.parallel_env(**kwargs)
-        self.agents = list(getattr(self._env, "agents", []))
         self._env_name = env_name
+        
+        # 存储agents列表（使用私有属性，因为基类中agents是property）
+        self._agents = list(getattr(self._env, "agents", []))
+        
+        # 缓存当前观测（用于get_state和get_obs）
+        self._current_observations: Optional[Dict[str, np.ndarray]] = None
+        
+        # 缓存episode_limit（从max_cycles获取）
+        self._episode_limit = kwargs.get("max_cycles", None)
 
     def reset(self) -> Dict[str, Any]:
         """
@@ -91,7 +101,10 @@ class Magent2ParallelBase(AgentParrelEnv):
             observation = result
 
         # 更新活跃Agent列表
-        self.agents = list(getattr(self._env, "agents", self.agents))
+        self._agents = list(getattr(self._env, "agents", self._agents))
+        
+        # 缓存当前观测
+        self._current_observations = observation
 
         return observation
 
@@ -118,6 +131,9 @@ class Magent2ParallelBase(AgentParrelEnv):
             aid: bool(terminations.get(aid, False) or truncations.get(aid, False))
             for aid in self.agents
         }
+        
+        # 缓存当前观测
+        self._current_observations = observations
 
         return observations, rewards, dones, infos
 
@@ -176,6 +192,289 @@ class Magent2ParallelBase(AgentParrelEnv):
         """
         return self._env.action_space(agent_id)
 
+    @property
+    def agents(self) -> List[str]:
+        """
+        获取当前活跃的Agent列表
+
+        Returns:
+            Agent ID列表
+        """
+        return self._agents
+
+    @property
+    def episode_limit(self) -> Optional[int]:
+        """
+        获取Episode最大步数限制
+
+        Returns:
+            Episode最大步数，如果无限制则返回None
+        """
+        return self._episode_limit
+
+    def get_obs(self) -> List[np.ndarray]:
+        """
+        获取所有Agent的观测值列表
+
+        Returns:
+            所有Agent的观测值列表，按agents顺序排列
+        """
+        if self._current_observations is None:
+            raise ValueError("Environment not reset. Call reset() first.")
+        
+        obs_list = []
+        for agent_id in self.agents:
+            if agent_id in self._current_observations:
+                obs = np.asarray(self._current_observations[agent_id])
+                # 展平多维观测
+                if obs.ndim > 1:
+                    obs = obs.flatten()
+                obs_list.append(obs)
+        
+        return obs_list
+
+    def get_obs_agent(self, agent_id: str) -> np.ndarray:
+        """
+        获取指定Agent的观测值
+
+        Args:
+            agent_id: Agent标识符
+
+        Returns:
+            该Agent的观测值，形状为 (obs_dim,)
+        """
+        if self._current_observations is None:
+            raise ValueError("Environment not reset. Call reset() first.")
+        
+        if agent_id not in self._current_observations:
+            raise ValueError(f"Agent {agent_id} not found in current observations")
+        
+        obs = np.asarray(self._current_observations[agent_id])
+        # 展平多维观测
+        if obs.ndim > 1:
+            obs = obs.flatten()
+        
+        return obs
+
+    def get_obs_size(self) -> Union[int, Tuple[int, ...]]:
+        """
+        获取观测维度大小
+
+        Returns:
+            观测空间的维度大小，可能是标量或元组（对于多Agent环境，通常所有Agent的观测维度相同）
+        """
+        if not self.agents:
+            raise ValueError("No agents available")
+        obs_space = self.observation_space(self.agents[0])
+        if hasattr(obs_space, "shape"):
+            shape = obs_space.shape
+            if len(shape) > 1:
+                return tuple(shape)
+            else:
+                return int(shape[0]) if len(shape) == 1 else int(np.prod(shape))
+        elif hasattr(obs_space, "n"):
+            return obs_space.n
+        else:
+            raise NotImplementedError(f"Cannot determine obs size from {obs_space}")
+
+    def get_state(self) -> np.ndarray:
+        """
+        获取全局状态（所有Agent的联合状态）
+
+        Magent2环境提供了state()方法，返回全局地图状态的压缩表示。
+        
+        State Space结构（根据map_size）：
+        - 不使用extra_features: map_size × map_size × 5 channels
+          - channels: [obstacle_map, team_0_presence, team_0_hp, team_1_presence, team_1_hp]
+        - 使用extra_features: map_size × map_size × 37 channels
+          - 额外channels: [binary_agent_id(10), one_hot_action(21), last_reward(1)]
+        
+        示例：
+        - map_size=20: state_dim = 20 × 20 × 5 = 2000
+        - map_size=45: state_dim = 45 × 45 × 5 = 10125
+        
+        如果环境没有state()方法，则通过拼接所有Agent的观测来构建全局状态。
+        如果环境有state()方法，优先使用环境提供的state。
+
+        Returns:
+            全局状态，形状为 (state_dim,)
+        """
+        # 首先尝试从环境获取state（如果支持）
+        if hasattr(self._env, "state") and callable(getattr(self._env, "state")):
+            try:
+                state = self._env.state()
+                if state is not None:
+                    state_array = np.asarray(state)
+                    if state_array.ndim > 1:
+                        state_array = state_array.flatten()
+                    return state_array
+            except (AttributeError, NotImplementedError, TypeError):
+                pass
+        
+        # 如果没有state方法，从观测拼接构建
+        if self._current_observations is None:
+            raise ValueError("Environment not reset. Call reset() first.")
+        
+        # 获取所有Agent的观测并展平
+        obs_list = []
+        for agent_id in sorted(self.agents):
+            if agent_id in self._current_observations:
+                obs = np.asarray(self._current_observations[agent_id])
+                # 展平多维观测
+                if obs.ndim > 1:
+                    obs = obs.flatten()
+                obs_list.append(obs)
+        
+        if not obs_list:
+            raise ValueError("No observations available")
+        
+        # 拼接所有观测
+        state = np.concatenate(obs_list, axis=0)
+        
+        return state
+
+    def get_state_size(self) -> int:
+        """
+        获取全局状态维度大小
+
+        优先使用环境提供的state维度，如果环境没有提供，则从观测拼接计算。
+
+        Returns:
+            全局状态的维度大小（标量）
+        """
+        # 首先尝试从环境获取state（如果支持），使用实际state的维度
+        if hasattr(self._env, "state") and callable(getattr(self._env, "state")):
+            try:
+                state = self._env.state()
+                if state is not None:
+                    state_array = np.asarray(state)
+                    if state_array.ndim > 1:
+                        return int(np.prod(state_array.shape))
+                    else:
+                        return int(state_array.shape[0])
+            except (AttributeError, NotImplementedError, TypeError):
+                pass
+        
+        # 尝试从环境获取state space
+        try:
+            if hasattr(self._env, "state_space"):
+                state_space = self._env.state_space
+                if hasattr(state_space, "shape"):
+                    return int(np.prod(state_space.shape))
+                elif hasattr(state_space, "n"):
+                    return state_space.n
+        except (AttributeError, NotImplementedError):
+            pass
+        
+        # 如果没有state相关方法，通过拼接观测计算
+        # 获取单个agent的观测维度
+        if not self.agents:
+            raise ValueError("No agents available")
+        
+        obs_space = self.observation_space(self.agents[0])
+        obs_dim = 1
+        if hasattr(obs_space, "shape"):
+            obs_dim = int(np.prod(obs_space.shape))
+        elif hasattr(obs_space, "n"):
+            obs_dim = obs_space.n
+        
+        # 全局状态 = 所有agent的观测拼接
+        state_dim = obs_dim * len(self.agents)
+        
+        return state_dim
+
+    def get_total_actions(self) -> int:
+        """
+        获取动作空间大小（所有Agent的动作空间通常相同）
+
+        Returns:
+            动作空间的总动作数（适用于离散动作空间）
+        """
+        if not self.agents:
+            raise ValueError("No agents available")
+        action_space = self.action_space(self.agents[0])
+        if hasattr(action_space, "n"):
+            return action_space.n
+        elif hasattr(action_space, "shape"):
+            # 连续动作空间
+            return int(np.prod(action_space.shape))
+        else:
+            raise NotImplementedError(f"Cannot determine action size from {action_space}")
+
+    def get_avail_actions(self) -> List[List[int]]:
+        """
+        获取所有Agent的可用动作列表
+
+        Returns:
+            所有Agent的可用动作列表，按agents顺序排列
+            每个元素是一个可用动作的列表
+        """
+        avail_actions = []
+        for agent_id in self.agents:
+            avail_actions.append(self.get_avail_agent_actions(agent_id))
+        return avail_actions
+
+    def get_avail_agent_actions(self, agent_id: str) -> List[int]:
+        """
+        获取指定Agent的可用动作列表
+
+        Magent2环境通常所有动作都可用，但如果环境提供可用动作掩码，则使用掩码。
+
+        Args:
+            agent_id: Agent标识符
+
+        Returns:
+            可用动作的列表，默认返回所有动作
+        """
+        # 尝试从环境获取可用动作掩码
+        if hasattr(self._env, "get_avail_actions") and callable(getattr(self._env, "get_avail_actions")):
+            try:
+                avail_actions = self._env.get_avail_actions(agent_id)
+                if avail_actions is not None:
+                    # 转换为列表并返回可用动作的索引
+                    avail_actions = np.asarray(avail_actions)
+                    if avail_actions.dtype == bool:
+                        # 布尔掩码，返回True的位置索引
+                        return np.where(avail_actions)[0].tolist()
+                    else:
+                        # 已经是索引列表
+                        return avail_actions.tolist() if hasattr(avail_actions, "tolist") else list(avail_actions)
+            except (AttributeError, NotImplementedError, TypeError, KeyError):
+                pass
+        
+        # 如果没有可用动作掩码，默认所有动作都可用
+        total_actions = self.get_total_actions()
+        return list(range(total_actions))
+
+    def get_env_info(self) -> Dict[str, Any]:
+        """
+        获取环境信息字典
+
+        Returns:
+            包含环境信息的字典：
+                - state_shape: 状态维度
+                - obs_shape: 观测维度
+                - n_actions: 动作空间大小
+                - n_agents: Agent数量
+                - episode_limit: Episode最大步数（如果支持）
+        """
+        obs_size = self.get_obs_size()
+        if isinstance(obs_size, tuple):
+            obs_shape = obs_size
+        else:
+            obs_shape = (obs_size,)
+
+        state_size = self.get_state_size()
+        state_shape = (state_size,)
+
+        return {
+            "state_shape": state_shape,
+            "obs_shape": obs_shape,
+            "n_actions": self.get_total_actions(),
+            "n_agents": self.n_agents,
+            "episode_limit": self.episode_limit,
+        }
+
 
 # ==================== 具体环境包装器 ====================
 
@@ -187,15 +486,28 @@ class Magent2BattleV4Parallel(Magent2ParallelBase):
     将MAgent2的battle_v4环境包装为统一的环境接口，支持多Agent并行交互。
     battle_v4是一个大规模多Agent战斗环境，两个团队相互对抗。
 
+    State Space说明：
+        全局state是一个 map_size × map_size 的地图，包含多个channels：
+        - 不使用extra_features: 5个channels
+          [obstacle_map, team_0_presence, team_0_hp, team_1_presence, team_1_hp]
+        - 使用extra_features: 37个channels（额外32个channels）
+        
+        State维度计算：
+        - map_size=20: 20 × 20 × 5 = 2000
+        - map_size=45: 45 × 45 × 5 = 10125
+        
+        注意：state是环境的全局状态表示，不是所有agent观测的拼接。
+        全局state通常比观测拼接更紧凑（2000 vs 20280 for map_size=20）。
+
     配置参数（**kwargs）：
-        - map_size: 地图大小（如45表示45x45的地图）
+        - map_size: 地图大小（如20表示20x20的地图，45表示45x45的地图）
         - minimap_mode: 小地图模式，如果为True则使用小地图观测
         - step_reward: 每一步的基础奖励
         - dead_penalty: 死亡惩罚（负数）
         - attack_penalty: 攻击惩罚（负数）
         - attack_opponent_reward: 攻击敌人的奖励（正数）
         - max_cycles: 每个episode的最大步数
-        - extra_features: 额外特征（可选）
+        - extra_features: 额外特征（可选），如果为True，state会增加32个channels
     """
 
     def __init__(self, **kwargs) -> None:

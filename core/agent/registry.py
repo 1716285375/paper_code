@@ -114,11 +114,12 @@ from core.modules.advantage_estimators import GAE
 MODULES.register("advantage_estimators/gae", GAE)
 
 # 注册网络编码器
-from core.networks import CNNEncoder, LSTMEncoder, MLPEncoder, TransformerEncoder
+from core.networks import CNNEncoder, GRUEncoder, LSTMEncoder, MLPEncoder, TransformerEncoder
 
 MODULES.register("networks/mlp", MLPEncoder)
 MODULES.register("networks/cnn", CNNEncoder)
 MODULES.register("networks/lstm", LSTMEncoder)
+MODULES.register("networks/gru", GRUEncoder)
 MODULES.register("networks/transformer", TransformerEncoder)
 
 # 注册策略头

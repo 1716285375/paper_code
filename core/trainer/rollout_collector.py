@@ -84,16 +84,28 @@ class RolloutCollector:
         dones_list = []
         logprobs_list = []
         values_list = []
+        states_list = []  # 全局状态（如果环境支持）
 
         obs = self.env.reset()
         done = False
         step = 0
+        
+        # 检查环境是否支持get_state
+        has_state = hasattr(self.env, "get_state") and callable(getattr(self.env, "get_state"))
         
         # 每25步输出一次进度
         progress_freq = max(25, self.max_steps_per_episode // 40)
         print(f"开始收集rollout数据（单Agent，最多{self.max_steps_per_episode}步）...", flush=True)
 
         while not done and step < self.max_steps_per_episode:
+            # 收集全局状态（如果支持）
+            if has_state:
+                try:
+                    state = self.env.get_state()
+                    states_list.append(state)
+                except:
+                    pass
+
             # Agent选择动作
             action, logprob, value = self.agent.act(obs, deterministic=False)
 
@@ -120,7 +132,7 @@ class RolloutCollector:
         if step > 0:
             print()  # 换行
 
-        return {
+        result = {
             "obs": np.array(obs_list),
             "actions": np.array(actions_list),
             "rewards": np.array(rewards_list),
@@ -129,6 +141,12 @@ class RolloutCollector:
             "logprobs": np.array(logprobs_list),
             "values": np.array(values_list),
         }
+        
+        # 如果收集了全局状态，添加到结果中
+        if states_list:
+            result["state"] = np.array(states_list)
+
+        return result
 
     def _collect_multi_agent(self) -> Dict[str, Any]:
         """
@@ -146,10 +164,14 @@ class RolloutCollector:
         all_dones = {aid: [] for aid in agent_ids}
         all_logprobs = {aid: [] for aid in agent_ids}
         all_values = {aid: [] for aid in agent_ids}
+        all_states = []  # 全局状态（所有agent共享）
 
         obs = self.env.reset()
         done = False
         step = 0
+        
+        # 检查环境是否支持get_state
+        has_state = hasattr(self.env, "get_state") and callable(getattr(self.env, "get_state"))
         
         # 每25步或每10%进度输出一次（对于长episode很有用）
         progress_freq = max(25, self.max_steps_per_episode // 40)  # 大约输出40次进度
@@ -159,6 +181,14 @@ class RolloutCollector:
         print(f"开始收集rollout数据（{num_agents}个Agent，最多{self.max_steps_per_episode}步）...", flush=True)
 
         while not done and step < self.max_steps_per_episode:
+            # 收集全局状态（如果支持）
+            if has_state:
+                try:
+                    state = self.env.get_state()
+                    all_states.append(state)
+                except:
+                    pass
+            
             # 批量选择动作（可能很慢，特别是首次运行时）
             # 首次运行时显示进度，后续只在每100步显示一次
             show_progress = (step == 0) or (step % 100 == 0 and step > 0)
@@ -208,7 +238,7 @@ class RolloutCollector:
             print()  # 换行
 
         # 转换为numpy数组
-        return {
+        result = {
             agent_id: {
                 "obs": np.array(all_obs[agent_id]),
                 "actions": np.array(all_actions[agent_id]),
@@ -220,3 +250,11 @@ class RolloutCollector:
             }
             for agent_id in agent_ids
         }
+        
+        # 如果收集了全局状态，添加到所有agent的数据中
+        if all_states:
+            states_array = np.array(all_states)
+            for agent_id in agent_ids:
+                result[agent_id]["state"] = states_array
+        
+        return result

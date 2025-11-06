@@ -129,7 +129,7 @@ def build_agent_from_config(
         )
     elif agent_type == "smpe":
         # 延迟导入以避免循环导入
-        from core.agent.smpe_agent import SMPEPolicyAgent
+        from algorithms.smpe import SMPEPolicyAgent
 
         return SMPEPolicyAgent(
             obs_dim=obs_dim,

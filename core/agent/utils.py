@@ -26,10 +26,12 @@ from core.base.agent import Agent
 from core.modules.optimizers import AdamBuilder, AdamWBuilder, AdaptiveOptimizer, OptimizerConfig
 from core.modules.policy_heads import BasePolicyHead, DiscretePolicyHead
 from core.modules.value_heads import BaseValueHead, LinearValueHead, MLPValueHead
-from core.networks import CNNEncoder, LSTMEncoder, MLPEncoder
+from core.networks import CNNEncoder, GRUEncoder, LSTMEncoder, MLPEncoder
+from core.modules.critics import CentralizedCritic, CentralizedValueMixin
+from core.utils.metrics import explained_variance
 
 
-class ConfigurablePPOAgent(Agent):
+class ConfigurablePPOAgent(Agent, CentralizedValueMixin):
     """
     可配置的PPO Agent，支持通过配置字典灵活组合不同的模块组件
 
@@ -38,7 +40,7 @@ class ConfigurablePPOAgent(Agent):
 
     配置结构示例:
         encoder:
-            type: "networks/mlp" | "networks/cnn" | "networks/lstm"
+            type: "networks/mlp" | "networks/cnn" | "networks/lstm" | "networks/gru"
             params:
                 in_dim: 845  # 对于CNN使用obs_shape
                 hidden_dims: [128, 128]
@@ -103,6 +105,17 @@ class ConfigurablePPOAgent(Agent):
             hidden_size = encoder_params.get("hidden_size", 128)
             self.encoder = LSTMEncoder(input_dim=obs_dim, hidden_size=hidden_size).to(self.device)
             feature_dim = self.encoder.output_dim
+        elif encoder_type == "networks/gru":
+            hidden_size = encoder_params.get("hidden_size", 128)
+            num_layers = encoder_params.get("num_layers", 1)
+            bidirectional = encoder_params.get("bidirectional", False)
+            self.encoder = GRUEncoder(
+                input_dim=obs_dim,
+                hidden_size=hidden_size,
+                num_layers=num_layers,
+                bidirectional=bidirectional,
+            ).to(self.device)
+            feature_dim = self.encoder.output_dim
         else:
             # Try registry
             self.encoder = build_module_from_config(encoder_config)
@@ -162,7 +175,40 @@ class ConfigurablePPOAgent(Agent):
         else:
             self.value_head = build_module_from_config(value_config)
 
-        # Build optimizer
+        # Optional modules
+        self.exploration = build_module_from_config(config.get("exploration"))
+        self.obs_normalizer = build_module_from_config(config.get("obs_normalizer"))
+        self.adv_normalizer = build_module_from_config(config.get("adv_normalizer"))
+
+        self._feature_dim = feature_dim
+        
+        # 初始化集中式Critic相关属性（必须在优化器构建之前）
+        self.central_critic: Optional[CentralizedCritic] = None
+        self.compute_central_vf = None
+        
+        # 集中式Critic配置（可选）
+        centralized_critic_config = config.get("centralized_critic", None)
+        if centralized_critic_config:
+            state_dim = centralized_critic_config.get("state_dim")
+            if state_dim is None:
+                raise ValueError("centralized_critic.state_dim must be provided")
+            
+            hidden_dims = centralized_critic_config.get("hidden_dims", [128, 64])
+            use_opponent_actions = centralized_critic_config.get("use_opponent_actions", False)
+            opponent_action_dim = centralized_critic_config.get("opponent_action_dim")
+            n_opponents = centralized_critic_config.get("n_opponents")
+            
+            central_critic = CentralizedCritic(
+                state_dim=state_dim,
+                hidden_dims=hidden_dims,
+                opponent_action_dim=opponent_action_dim,
+                n_opponents=n_opponents,
+                use_opponent_actions=use_opponent_actions,
+            ).to(self.device)
+            
+            self.set_central_critic(central_critic)
+
+        # Build optimizer（必须在集中式Critic初始化之后）
         opt_config = config.get("optimizer", {"type": "optimizers/adam", "params": {"lr": 3e-4}})
         opt_type = opt_config.get("type") or opt_config.get("name", "optimizers/adam")
         opt_params = opt_config.get("params", {}) or opt_config.get("kwargs", {})
@@ -199,13 +245,6 @@ class ConfigurablePPOAgent(Agent):
             if optimizer is None:
                 raise ValueError(f"Unknown optimizer type: {opt_type}")
             self.optimizer = optimizer
-
-        # Optional modules
-        self.exploration = build_module_from_config(config.get("exploration"))
-        self.obs_normalizer = build_module_from_config(config.get("obs_normalizer"))
-        self.adv_normalizer = build_module_from_config(config.get("adv_normalizer"))
-
-        self._feature_dim = feature_dim
 
     def _ensure_heads(self, features: torch.Tensor) -> None:
         """Lazy initialization of heads if feature_dim was unknown."""
@@ -257,8 +296,8 @@ class ConfigurablePPOAgent(Agent):
                 obs = obs_normalized.reshape(original_shape)
 
         # Encode
-        if isinstance(self.encoder, LSTMEncoder):
-            # LSTM expects (B, T, D) - fake sequence length 1
+        if isinstance(self.encoder, (LSTMEncoder, GRUEncoder)):
+            # LSTM/GRU expects (B, T, D) - fake sequence length 1
             if obs.dim() == 2:
                 obs = obs.unsqueeze(1)
             features, _ = self.encoder(obs)
@@ -339,8 +378,23 @@ class ConfigurablePPOAgent(Agent):
                 device=self.device,
                 dtype=advantages.dtype,
             )
-
-        dist, values = self._forward(obs)
+        
+        # 获取策略分布（总是需要）
+        dist, local_values = self._forward(obs)
+        
+        # 如果使用集中式Critic，使用全局状态和对手动作计算价值
+        use_centralized_critic = batch.get("use_centralized_critic", False)
+        if use_centralized_critic and self.central_critic is not None:
+            state = torch.as_tensor(batch.get("state"), dtype=torch.float32, device=self.device)
+            opponent_actions = batch.get("opponent_actions")
+            if opponent_actions is not None:
+                opponent_actions = torch.as_tensor(opponent_actions, dtype=torch.long, device=self.device)
+            # 使用集中式Critic计算价值
+            values = self.central_value_function(state, opponent_actions)
+        else:
+            # 使用局部Critic
+            values = local_values
+        
         logprobs = dist.log_prob(actions)
         entropy = dist.entropy().mean()
         ratio = torch.exp(logprobs - old_logprobs)
@@ -350,19 +404,66 @@ class ConfigurablePPOAgent(Agent):
                 torch.clamp(ratio, 1.0 - clip_coef, 1.0 + clip_coef) * advantages,
             )
         ).mean()
-        value_loss = F.mse_loss(values, returns)
+        
+        # 价值函数裁剪（如果配置了vf_clip_param）
+        vf_clip_param = batch.get("vf_clip_param", None)
+        if vf_clip_param is not None and vf_clip_param > 0:
+            # 获取旧的价值估计（用于裁剪）
+            old_values = torch.as_tensor(batch.get("old_values"), dtype=torch.float32, device=self.device)
+            
+            # 计算未裁剪的价值损失
+            vf_loss1 = (values - returns) ** 2
+            
+            # 计算裁剪后的价值
+            vf_clipped = old_values + torch.clamp(
+                values - old_values,
+                -vf_clip_param,
+                vf_clip_param
+            )
+            
+            # 计算裁剪后的价值损失
+            vf_loss2 = (vf_clipped - returns) ** 2
+            
+            # 取两者最大值（防止价值函数过度更新）
+            value_loss = torch.max(vf_loss1, vf_loss2).mean()
+        else:
+            # 不使用裁剪，直接计算MSE损失
+            value_loss = F.mse_loss(values, returns)
+        
         loss = policy_loss + value_coef * value_loss - entropy_coef * entropy
 
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step(list(self.parameters()))
 
-        return {
+        metrics = {
             "policy_loss": float(policy_loss.item()),
             "value_loss": float(value_loss.item()),
             "entropy": float(entropy.item()),
             "total_loss": float(loss.item()),
         }
+        
+        # 计算价值函数解释方差
+        try:
+            vf_explained_var = explained_variance(values.detach(), returns.detach())
+            metrics["vf_explained_var"] = vf_explained_var
+        except Exception:
+            # 如果计算失败，跳过（不影响训练）
+            pass
+        
+        # 如果使用了价值函数裁剪，添加裁剪率指标
+        if vf_clip_param is not None and vf_clip_param > 0:
+            # 计算裁剪率（有多少比例的价值被裁剪了）
+            old_values = torch.as_tensor(batch.get("old_values"), dtype=torch.float32, device=self.device)
+            vf_clipped = old_values + torch.clamp(
+                values - old_values,
+                -vf_clip_param,
+                vf_clip_param
+            )
+            vf_clip_fraction = ((values - vf_clipped).abs() > 1e-6).float().mean()
+            metrics["vf_clip_fraction"] = float(vf_clip_fraction.item())
+        
+        return metrics
 
     def parameters(self):
         for p in self.encoder.parameters():
@@ -373,9 +474,13 @@ class ConfigurablePPOAgent(Agent):
         if self.value_head is not None:
             for p in self.value_head.parameters():
                 yield p
+        # 集中式Critic参数
+        if self.central_critic is not None:
+            for p in self.central_critic.parameters():
+                yield p
 
     def state_dict(self) -> Dict[str, Any]:
-        return {
+        state = {
             "encoder": self.encoder.state_dict(),
             "policy_head": self.policy_head.state_dict() if self.policy_head is not None else None,
             "value_head": self.value_head.state_dict() if self.value_head is not None else None,
@@ -385,6 +490,10 @@ class ConfigurablePPOAgent(Agent):
                 else None
             ),
         }
+        # 集中式Critic状态
+        if self.central_critic is not None:
+            state["central_critic"] = self.central_critic.state_dict()
+        return state
 
     def load_state_dict(self, state: Dict[str, Any]) -> None:
         self.encoder.load_state_dict(state["encoder"])
@@ -392,6 +501,9 @@ class ConfigurablePPOAgent(Agent):
             self.policy_head.load_state_dict(state["policy_head"])
         if self.value_head is not None and state.get("value_head") is not None:
             self.value_head.load_state_dict(state["value_head"])
+        # 加载集中式Critic状态
+        if self.central_critic is not None and state.get("central_critic") is not None:
+            self.central_critic.load_state_dict(state["central_critic"])
 
     def to_training_mode(self) -> None:
         self.encoder.train()
@@ -399,6 +511,8 @@ class ConfigurablePPOAgent(Agent):
             self.policy_head.train()
         if self.value_head is not None:
             self.value_head.train()
+        if self.central_critic is not None:
+            self.central_critic.train()
 
     def to_eval_mode(self) -> None:
         self.encoder.eval()
@@ -406,3 +520,5 @@ class ConfigurablePPOAgent(Agent):
             self.policy_head.eval()
         if self.value_head is not None:
             self.value_head.eval()
+        if self.central_critic is not None:
+            self.central_critic.eval()

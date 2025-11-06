@@ -170,8 +170,11 @@ scripts/**/*.log
 exammples/checkpoints/
 exammples/training_data/
 examples/**.md
+examples/plots/
+examples/training*/
 
 docs/
 
 
 scripts/
+

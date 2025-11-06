@@ -11,17 +11,27 @@
 """
 # ------------------------------------------------------------
 
-from algorithms.ppo.penalty_self_play_trainer import SelfPlayPPOPenaltyTrainer
-from algorithms.ppo.penalty_trainer import PPOPenaltyTrainer
-from algorithms.ppo.self_play_trainer import PolicyPool, SelfPlayPPOTrainer
-from algorithms.ppo.trainer import PPOTrainer
+from algorithms.ppo.trainers.base_trainer import PPOTrainer
+from algorithms.ppo.trainers.self_play_trainer import SelfPlayPPOTrainer
+from algorithms.ppo.core import (
+    clip_ratio,
+    compute_ppo_loss,
+    compute_value_loss,
+    compute_entropy,
+    normalize_advantages,
+)
+from algorithms.ppo.config import PPOConfig
 
 __all__ = [
     # Trainers
     "PPOTrainer",
-    "PPOPenaltyTrainer",
     "SelfPlayPPOTrainer",
-    "SelfPlayPPOPenaltyTrainer",
-    # Utilities
-    "PolicyPool",
+    # Core functions
+    "clip_ratio",
+    "compute_ppo_loss",
+    "compute_value_loss",
+    "compute_entropy",
+    "normalize_advantages",
+    # Config
+    "PPOConfig",
 ]

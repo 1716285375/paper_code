@@ -1,0 +1,121 @@
+# HATRPO自博弈训练配置 - 12v12 Magent2环境，8GB显存优化
+# 针对RTX 4060 Ti (8GB) 优化，异质智能体TRPO
+
+# 环境配置
+env:
+  name: "magent2:battle_v4"
+  map_size: 20
+  max_cycles: 100
+  minimap_mode: false
+
+# 训练配置
+training:
+  num_updates: 1500  # TRPO计算较慢，减少更新次数
+  batch_size: 128
+  num_epochs: 2  # TRPO通常只需要1-2轮
+  max_steps_per_episode: 100
+  
+  # PPO/TRPO核心参数
+  clip_coef: 0.2
+  value_coef: 0.5
+  entropy_coef: 0.01
+  vf_clip_param: 10.0
+  
+  # GAE参数
+  gamma: 0.99
+  gae_lambda: 0.95
+  
+  # 学习率
+  lr: 3e-4
+  critic_lr: 5e-3  # Critic独立学习率
+  
+  # 梯度裁剪
+  max_grad_norm: 0.5
+  
+  # TRPO特定参数
+  kl_threshold: 0.01
+  max_line_search_steps: 15
+  accept_ratio: 0.1
+  back_ratio: 0.8
+  cg_damping: 0.1
+  cg_max_iters: 10
+  
+  # HAPPO特定参数
+  update_order: "random"
+  use_marginal_advantage: true
+  
+  # MAPPO参数
+  use_centralized_critic: true
+  global_obs_dim: 2000
+  opp_action_in_cc: false
+  
+  # 自博弈参数
+  self_play_update_freq: 10
+  self_play_mode: "pool"
+  use_policy_pool: true
+  policy_pool_size: 15
+  opponent_pool_strategy: "pfsp"
+  
+  # 评估和保存
+  eval_freq: 50
+  save_freq: 100
+  log_freq: 10
+
+# Agent配置
+agent:
+  type: "ppo"
+  obs_dim: 845
+  action_dim: 21
+  
+  # 编码器
+  encoder:
+    type: "networks/mlp"
+    params:
+      in_dim: 845
+      hidden_dims: [128, 64]
+      use_layer_norm: true
+      dropout: 0.0
+  
+  # 策略头
+  policy_head:
+    type: "policy_heads/discrete"
+    params:
+      hidden_dims: [32]
+  
+  # 价值头
+  value_head:
+    type: "value_heads/mlp"
+    params:
+      hidden_dims: [32]
+  
+  # 集中式Critic
+  centralized_critic:
+    state_dim: 2000
+    hidden_dims: [128, 64]
+    use_opponent_actions: false
+    opponent_action_dim: 21
+    n_opponents: 12
+  
+  # 优化器
+  optimizer:
+    type: "optimizers/adam"
+    params:
+      lr: 3e-4
+      weight_decay: 0.0
+
+# 其他配置
+seed: 42
+device: "cuda"
+
+# 数据保存配置
+data_saving:
+  enabled: true
+  format: "json"
+  save_freq: 10
+
+# 跟踪配置
+tracking:
+  enabled: true
+  type: "tensorboard"
+  project: "marl-selfplay"
+

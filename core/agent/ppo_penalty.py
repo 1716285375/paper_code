@@ -5,9 +5,21 @@
 @Author         : Jie
 @CopyRight      : Copyright © 2025 Jie. All Rights Reserved
 @Create Date    : 2025-11-02 00:00
-@Update Date    :
+@Update Date    : 2025-11-05
 @Description    : PPO-Penalty Agent实现
 PPO的Penalty变体，使用自适应KL惩罚而非clipping
+
+注意：
+    - 此Agent类主要用于需要独立Agent实例的场景
+    - 对于Trainer，建议使用ConfigurablePPOAgent + use_penalty配置
+    - 配置示例：
+        agent:
+          type: "ppo"
+          use_penalty: true
+          kl_penalty:
+            initial_beta: 1.0
+            target_kl: 0.01
+    - 在trainer配置中设置 use_penalty: true 即可启用PPO-Penalty模式
 """
 # ------------------------------------------------------------
 
