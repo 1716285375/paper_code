@@ -13,7 +13,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union
 import numpy as np
 
 from core.base.trainer import Trainer
@@ -57,7 +57,7 @@ class BaseAlgorithmTrainer(Trainer):
     
     def __init__(
         self,
-        agent: Agent | AgentManager,
+        agent: Union[Agent, AgentManager],
         env: Env,
         config: Dict[str, Any],
         logger: Optional[Logger] = None,
@@ -282,21 +282,85 @@ class BaseAlgorithmTrainer(Trainer):
             path: 保存路径
         """
         import os
+        import pickle
         import torch
         
         # 创建目录
         os.makedirs(os.path.dirname(path), exist_ok=True)
         
+        # 获取agent状态（包括optimizer和scheduler）
+        # 注意：现在scheduler已经修复为可序列化的LinearLRScheduler类，可以正常保存
+        agent_state = None
+        if hasattr(self.agent, "state_dict"):
+            try:
+                agent_state = self.agent.state_dict()
+                # 验证agent_state可以序列化（包括optimizer和scheduler）
+                # 如果失败，会回退到只保存模型参数
+                if agent_state is not None:
+                    try:
+                        pickle.dumps(agent_state)
+                    except (pickle.PicklingError, AttributeError, TypeError) as serial_err:
+                        # 如果序列化失败，尝试移除optimizer和scheduler，只保留模型参数
+                        if isinstance(agent_state, dict):
+                            agent_state.pop("optimizer", None)
+                            agent_state.pop("scheduler", None)
+                            if self.logger:
+                                if hasattr(self.logger, "logger"):
+                                    self.logger.logger.warning(
+                                        f"Failed to serialize optimizer/scheduler, saving model only: {serial_err}"
+                                    )
+                                elif hasattr(self.logger, "warning"):
+                                    self.logger.warning(
+                                        f"Failed to serialize optimizer/scheduler, saving model only: {serial_err}"
+                                    )
+            except (AttributeError, TypeError, pickle.PicklingError) as e:
+                # 如果序列化失败，尝试只保存模型参数
+                if self.logger:
+                    if hasattr(self.logger, "logger"):
+                        self.logger.logger.warning(f"Failed to save full state, saving model only: {e}")
+                    elif hasattr(self.logger, "warning"):
+                        self.logger.warning(f"Failed to save full state, saving model only: {e}")
+                # 只保存模型参数（不包含optimizer和scheduler）
+                agent_state = {}
+                try:
+                    if hasattr(self.agent, "encoder"):
+                        agent_state["encoder"] = self.agent.encoder.state_dict() if hasattr(self.agent.encoder, "state_dict") else None
+                    if hasattr(self.agent, "policy_head"):
+                        agent_state["policy_head"] = self.agent.policy_head.state_dict() if hasattr(self.agent.policy_head, "state_dict") else None
+                    if hasattr(self.agent, "value_head"):
+                        agent_state["value_head"] = self.agent.value_head.state_dict() if hasattr(self.agent.value_head, "state_dict") else None
+                    if hasattr(self.agent, "central_critic") and self.agent.central_critic is not None:
+                        agent_state["central_critic"] = self.agent.central_critic.state_dict() if hasattr(self.agent.central_critic, "state_dict") else None
+                except Exception as e2:
+                    if self.logger:
+                        if hasattr(self.logger, "logger"):
+                            self.logger.logger.error(f"Failed to save model parameters: {e2}")
+                        elif hasattr(self.logger, "error"):
+                            self.logger.error(f"Failed to save model parameters: {e2}")
+                    agent_state = None
+        
         # 保存状态
         state = {
-            "agent_state": self.agent.state_dict() if hasattr(self.agent, "state_dict") else None,
+            "agent_state": agent_state,
             "update_count": self.update_count,
             "episode_count": self.episode_count,
             "step_count": self.step_count,
             "config": self.config,
         }
         
-        torch.save(state, path)
+        try:
+            torch.save(state, path)
+        except (AttributeError, TypeError, pickle.PicklingError) as e:
+            # 如果仍然失败，使用pickle protocol 4并确保所有不可序列化的对象都被移除
+            if self.logger:
+                if hasattr(self.logger, "logger"):
+                    self.logger.logger.warning(f"Standard save failed, trying alternative method: {e}")
+                elif hasattr(self.logger, "warning"):
+                    self.logger.warning(f"Standard save failed, trying alternative method: {e}")
+            # 确保optimizer已被移除
+            if isinstance(agent_state, dict):
+                agent_state.pop("optimizer", None)
+            torch.save(state, path, pickle_protocol=4)
         
         if self.logger:
             if hasattr(self.logger, "logger"):

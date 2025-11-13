@@ -10,6 +10,7 @@
 - HAPPO
 - HATRPO
 - SMPE
+- HP3O
 
 使用方法:
     # PPO自博弈
@@ -29,6 +30,9 @@
     
     # SMPE自博弈
     python examples/train_selfplay_unified.py --algorithm smpe --config configs/smpe/smpe_magent2_selfplay.yaml
+    
+    # HP3O自博弈
+    python examples/train_selfplay_unified.py --algorithm hp3o --config configs/hp3o/hp3o_magent2_selfplay.yaml
 """
 
 import argparse
@@ -50,6 +54,7 @@ try:
         SelfPlayMATRPOTrainer,
         SelfPlayHAPPOTrainer,
         SelfPlayHATRPOTrainer,
+        SelfPlayHP3OTrainer,
     )
 except ImportError:
     # 如果统一导入失败，尝试分别导入
@@ -57,6 +62,10 @@ except ImportError:
     from algorithms.matrpo.trainers.self_play_trainer import SelfPlayMATRPOTrainer
     from algorithms.happo.trainers.self_play_trainer import SelfPlayHAPPOTrainer
     from algorithms.hatrpo.trainers.self_play_trainer import SelfPlayHATRPOTrainer
+    try:
+        from algorithms.hp3o.trainers.self_play_trainer import SelfPlayHP3OTrainer
+    except ImportError:
+        SelfPlayHP3OTrainer = None
 
 try:
     from algorithms.smpe.trainers.self_play_trainer import SMPESelfPlayTrainer
@@ -97,6 +106,10 @@ TRAINER_CLASS_MAP = {
 # 如果SMPE可用，添加到映射中
 if SMPESelfPlayTrainer is not None:
     TRAINER_CLASS_MAP["smpe"] = SMPESelfPlayTrainer
+
+# 如果HP3O可用，添加到映射中
+if SelfPlayHP3OTrainer is not None:
+    TRAINER_CLASS_MAP["hp3o"] = SelfPlayHP3OTrainer
 
 
 def create_agent_manager(

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional, Tuple
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -363,7 +364,34 @@ class ConfigurablePPOAgent(Agent, CentralizedValueMixin):
 
     def learn(self, batch: Dict[str, Any]) -> Dict[str, Any]:
         obs = torch.as_tensor(batch["obs"], dtype=torch.float32, device=self.device)
-        actions = torch.as_tensor(batch["actions"], dtype=torch.long, device=self.device)
+        
+        # 处理动作数据：确保是1维数组（对于离散动作）
+        actions = batch["actions"]
+        if isinstance(actions, np.ndarray):
+            # 如果是numpy数组，确保是1维
+            if actions.ndim > 1:
+                # 2D或更高维度，展平为1D
+                # 对于离散动作，应该是 (batch_size, 1) -> (batch_size,)
+                if actions.shape[1] == 1:
+                    actions = actions.flatten()
+                else:
+                    # 如果第二维不是1，可能是多个动作维度，取第一列
+                    actions = actions[:, 0].flatten()
+            elif actions.ndim == 0:
+                # 标量，转换为1维数组
+                actions = np.array([actions], dtype=np.int64)
+        elif isinstance(actions, (list, tuple)):
+            # 列表或元组，转换为numpy数组
+            actions = np.array(actions, dtype=np.int64)
+            if actions.ndim > 1:
+                actions = actions.flatten()
+        
+        actions = torch.as_tensor(actions, dtype=torch.long, device=self.device)
+        
+        # 确保动作是1维tensor
+        if actions.ndim > 1:
+            actions = actions.flatten()
+        
         old_logprobs = torch.as_tensor(batch["logprobs"], dtype=torch.float32, device=self.device)
         advantages = torch.as_tensor(batch["advantages"], dtype=torch.float32, device=self.device)
         returns = torch.as_tensor(batch["returns"], dtype=torch.float32, device=self.device)
@@ -490,6 +518,13 @@ class ConfigurablePPOAgent(Agent, CentralizedValueMixin):
                 else None
             ),
         }
+        # 保存scheduler状态（如果存在）
+        if hasattr(self.optimizer, "scheduler") and self.optimizer.scheduler is not None:
+            try:
+                state["scheduler"] = self.optimizer.scheduler.state_dict()
+            except Exception:
+                # 如果scheduler无法序列化，跳过（不应该发生，因为已经修复为可序列化）
+                state["scheduler"] = None
         # 集中式Critic状态
         if self.central_critic is not None:
             state["central_critic"] = self.central_critic.state_dict()
@@ -501,6 +536,21 @@ class ConfigurablePPOAgent(Agent, CentralizedValueMixin):
             self.policy_head.load_state_dict(state["policy_head"])
         if self.value_head is not None and state.get("value_head") is not None:
             self.value_head.load_state_dict(state["value_head"])
+        # 加载optimizer状态
+        if hasattr(self.optimizer, "optimizer") and state.get("optimizer") is not None:
+            try:
+                self.optimizer.optimizer.load_state_dict(state["optimizer"])
+            except Exception:
+                # 如果加载失败，跳过（不影响训练，只是需要重新累积优化器状态）
+                pass
+        # 加载scheduler状态
+        if hasattr(self.optimizer, "scheduler") and self.optimizer.scheduler is not None:
+            if state.get("scheduler") is not None:
+                try:
+                    self.optimizer.scheduler.load_state_dict(state["scheduler"])
+                except Exception:
+                    # 如果加载失败，跳过（不影响训练，只是学习率会重新开始）
+                    pass
         # 加载集中式Critic状态
         if self.central_critic is not None and state.get("central_critic") is not None:
             self.central_critic.load_state_dict(state["central_critic"])

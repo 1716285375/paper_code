@@ -321,20 +321,83 @@ class AgentManager:
 
             values = [batch[key] for batch in batches]
 
+            # 检查是否为空
+            if not values:
+                continue
+
+            # 检查是否为标量值（int, float, bool 或 0维numpy数组）
+            first_value = values[0]
+            
+            # 检查所有值是否都是标量
+            all_scalars = all(
+                isinstance(v, (int, float, bool)) or
+                (isinstance(v, np.ndarray) and v.ndim == 0) or
+                (isinstance(v, np.generic)) or
+                (isinstance(v, np.number))
+                for v in values
+            )
+            
+            if all_scalars:
+                # 对于标量值，如果所有值相同，使用第一个值；否则使用列表
+                try:
+                    if len(set(values)) == 1:
+                        merged[key] = first_value
+                    else:
+                        merged[key] = np.array(values) if len(values) > 1 else values[0]
+                except (TypeError, ValueError):
+                    # 如果无法比较或创建数组，使用列表
+                    merged[key] = values
+                continue
+
+            # 检查所有值是否都是列表
+            all_lists = all(isinstance(v, list) for v in values)
+            
             # 尝试转换为tensor或numpy数组
             try:
-                if isinstance(values[0], torch.Tensor):
-                    merged[key] = torch.cat(values, dim=0)
-                elif isinstance(values[0], np.ndarray):
-                    merged[key] = np.concatenate(values, axis=0)
-                elif isinstance(values[0], list):
+                if isinstance(first_value, torch.Tensor):
+                    # 确保所有值都是tensor
+                    if all(isinstance(v, torch.Tensor) for v in values):
+                        merged[key] = torch.cat(values, dim=0)
+                    else:
+                        # 转换非tensor为tensor
+                        merged[key] = torch.cat([torch.as_tensor(v) for v in values], dim=0)
+                elif isinstance(first_value, np.ndarray):
+                    # 确保所有值都是numpy数组
+                    if all(isinstance(v, np.ndarray) for v in values):
+                        # 检查是否为0维数组（标量）
+                        if first_value.ndim == 0:
+                            merged[key] = np.array(values)
+                        else:
+                            merged[key] = np.concatenate(values, axis=0)
+                    else:
+                        # 转换非数组为数组
+                        arrays = [np.array(v) for v in values]
+                        if any(arr.ndim == 0 for arr in arrays):
+                            merged[key] = np.array(values)
+                        else:
+                            merged[key] = np.concatenate(arrays, axis=0)
+                elif all_lists:
+                    # 只有当所有值都是列表时才使用sum
                     merged[key] = sum(values, [])  # 展平列表
                 else:
                     # 尝试使用numpy concatenate
-                    merged[key] = np.concatenate([np.array(v) for v in values], axis=0)
+                    # 检查是否可以转换为数组
+                    try:
+                        arrays = [np.array(v) for v in values]
+                        # 检查是否有0维数组
+                        if any(arr.ndim == 0 for arr in arrays):
+                            merged[key] = np.array(values)
+                        else:
+                            merged[key] = np.concatenate(arrays, axis=0)
+                    except (ValueError, TypeError):
+                        # 如果无法转换为数组或连接，使用列表
+                        merged[key] = values
             except Exception:
-                # 如果无法合并，使用列表
-                merged[key] = sum(values, [])
+                # 如果无法合并，使用第一个值或列表
+                if len(set(str(v) for v in values)) == 1:
+                    merged[key] = first_value
+                else:
+                    merged[key] = values
 
         return merged
 

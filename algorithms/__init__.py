@@ -16,6 +16,7 @@ from algorithms.smpe import SMPETrainer, SMPESelfPlayTrainer, SMPEConfig
 from algorithms.matrpo import MATRPOTrainer, SelfPlayMATRPOTrainer, MATRPOConfig
 from algorithms.happo import HAPPOTrainer, SelfPlayHAPPOTrainer, HAPPOConfig
 from algorithms.hatrpo import HATRPOTrainer, SelfPlayHATRPOTrainer, HATRPOConfig
+from algorithms.hp3o import HP3OTrainer, SelfPlayHP3OTrainer, HP3OConfig
 
 __all__ = [
     "PPOTrainer",
@@ -35,4 +36,7 @@ __all__ = [
     "HATRPOTrainer",
     "SelfPlayHATRPOTrainer",
     "HATRPOConfig",
+    "HP3OTrainer",
+    "SelfPlayHP3OTrainer",
+    "HP3OConfig",
 ]

@@ -1,0 +1,108 @@
+# HP3O自博弈训练配置 - 12v12 Magent2环境，8GB显存优化
+# HP3O (High-Performance PPO with Trajectory Replay) 算法
+# 针对RTX 4060 Ti (8GB) 优化
+
+# 环境配置
+env:
+  name: "magent2:battle_v4"
+  map_size: 20  # 12v12使用20x20地图
+  ten: 100  # Episode最大步数
+  minimap_mode: false
+
+# 训练配置
+training:
+  num_updates: 2000  # 训练更新次数
+  batch_size: 64  # 8GB显存限制下的batch size
+  num_epochs: 10  # 每批数据训练轮数
+  max_steps_per_episode: 100  # Episode最大步数
+  
+  # PPO核心参数
+  clip_coef: 0.2
+  value_coef: 0.5
+  entropy_coef: 0.01
+  vf_clip_param: 10.0  # 价值函数裁剪参数
+  
+  # GAE参数
+  gamma: 0.99
+  gae_lambda: 0.95
+  
+  # 学习率
+  lr: 3e-4
+  
+  # 梯度裁剪
+  max_grad_norm: 0.5
+  
+  # HP3O特定参数（轨迹重放）
+  trajectory_buffer_size: 10  # 轨迹缓冲区大小（存储的轨迹数量）
+  trajectory_sample_size: 3  # 每次采样轨迹数量
+  data_sample_size: 256  # 从轨迹中采样数据量
+  threshold: 0.5  # 轨迹筛选阈值（用于use_best_value）
+  use_best_value: false  # 是否使用最佳轨迹的价值函数（设置为true可启用价值函数增强）
+  
+  # 自博弈参数
+  self_play_update_freq: 10  # 每N个更新更新一次对手策略
+  self_play_mode: "pool"  # 自博弈模式：copy（直接复制）或 pool（策略池采样）
+  use_policy_pool: true  # 是否使用策略池
+  policy_pool_size: 15  # 策略池大小
+  opponent_pool_strategy: "pfsp"  # 策略池采样策略：uniform, elo, pfsp
+  
+  # 评估和保存
+  eval_freq: 50
+  save_freq: 100
+  log_freq: 10
+
+# Agent配置
+agent:
+  type: "ppo"  # 使用标准PPO Agent
+  obs_dim: 845  # Magent2观测维度
+  action_dim: 21  # Magent2动作维度
+  
+  # 编码器（减小网络规模）
+  encoder:
+    type: "networks/mlp"  # 使用完整路径：networks/mlp, networks/cnn, networks/lstm, networks/gru
+    params:
+      in_dim: 845
+      hidden_dims: [128, 64]  # 8GB显存优化：减小网络规模
+      use_layer_norm: true
+      dropout: 0.0
+  
+  # Policy Head
+  policy_head:
+    type: "policy_heads/discrete"  # 离散动作空间
+    params:
+      hidden_dims: [32]  # 减小网络规模
+  
+  # Value Head
+  value_head:
+    type: "value_heads/mlp"  # MLP价值头
+    params:
+      hidden_dims: [32]  # 减小网络规模
+  
+  # 优化器配置
+  optimizer:
+    type: "optimizers/adam"  # Adam优化器
+    params:
+      lr: 3e-4
+      weight_decay: 0.0
+      max_grad_norm: 0.5
+      scheduler: "linear"  # 线性学习率调度
+      warmup_steps: 200
+      total_steps: 20000
+
+# 数据保存配置
+data_saving:
+  enabled: true
+  format: "json"  # json, csv, both
+  save_freq: 10  # 每N个更新保存一次
+
+# 日志和追踪配置
+logging:
+  log_dir: "logs"
+  log_to_file: true
+  log_to_console: true
+
+tracking:
+  enabled: true
+  type: "tensorboard"
+  project: "marl-selfplay"
+

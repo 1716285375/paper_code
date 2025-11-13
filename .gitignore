@@ -178,3 +178,12 @@ docs/
 
 scripts/
 
+# 忽略 lunar.py 文件
+test/lunar.py
+
+# 忽略 lunarlander 相关目录
+test/lunarlander_*/
+
+test/models
+
+

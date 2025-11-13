@@ -86,6 +86,44 @@ def clip_gradients(
     return torch.nn.utils.clip_grad_norm_(parameters, max_norm).item()
 
 
+# 可序列化的学习率lambda函数类
+class LinearLRScheduler:
+    """
+    可序列化的线性学习率调度器
+    
+    用于替代局部函数，使得LambdaLR可以序列化
+    """
+    
+    def __init__(self, warmup_steps: int, total_steps: int):
+        """
+        初始化线性学习率调度器
+        
+        Args:
+            warmup_steps: 预热步数
+            total_steps: 总训练步数
+        """
+        self.warmup_steps = warmup_steps
+        self.total_steps = total_steps
+    
+    def __call__(self, step: int) -> float:
+        """
+        计算学习率缩放因子
+        
+        Args:
+            step: 当前步数
+        
+        Returns:
+            学习率缩放因子
+        """
+        if self.total_steps <= 0:
+            return 1.0
+        # 预热阶段：线性增加
+        if step < self.warmup_steps and self.warmup_steps > 0:
+            return float(step) / float(max(1, self.warmup_steps))
+        # 衰减阶段：线性减少
+        return max(0.0, float(self.total_steps - step) / float(max(1, self.total_steps - self.warmup_steps)))
+
+
 def build_scheduler(
     optimizer: torch.optim.Optimizer,
     *,
@@ -97,7 +135,7 @@ def build_scheduler(
     构建学习率调度器
 
     支持的学习率调度策略：
-        - 'linear': 线性衰减（带预热）
+        - 'linear': 线性衰减（带预热）- 使用可序列化的类
         - 'cosine': 余弦退火
 
     Args:
@@ -120,16 +158,8 @@ def build_scheduler(
 
     if name == "linear":
         # 线性衰减调度器（带预热）
-        def lr_lambda(step: int) -> float:
-            """计算学习率缩放因子"""
-            if total_steps <= 0:
-                return 1.0
-            # 预热阶段：线性增加
-            if step < warmup_steps and warmup_steps > 0:
-                return float(step) / float(max(1, warmup_steps))
-            # 衰减阶段：线性减少
-            return max(0.0, float(total_steps - step) / float(max(1, total_steps - warmup_steps)))
-
+        # 使用可序列化的类而不是局部函数
+        lr_lambda = LinearLRScheduler(warmup_steps, total_steps)
         return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
 
     return None
