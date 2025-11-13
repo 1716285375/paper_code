@@ -209,8 +209,8 @@ def main():
     
     args = parser.parse_args()
     
-    # 加载配置
-    config = load_config(args.config)
+    # 加载配置（返回字典格式，因为配置文件使用嵌套结构）
+    config = load_config(args.config, as_dict=True)
     
     # 覆盖设备配置
     device = setup_gpu(args.gpu)
