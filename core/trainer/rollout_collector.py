@@ -212,8 +212,18 @@ class RolloutCollector:
             elif show_progress:
                 print()  # 换行
 
+            # 从actions_dict中提取动作值（环境期望的是{agent_id: action}，而不是{agent_id: (action, logprob, value)}）
+            env_actions = {}
+            for agent_id, action_data in actions_dict.items():
+                if isinstance(action_data, tuple):
+                    # 如果是元组格式 (action, logprob, value)，提取action
+                    env_actions[agent_id] = action_data[0]
+                else:
+                    # 如果已经是简单动作值，直接使用
+                    env_actions[agent_id] = action_data
+
             # 环境步进
-            next_obs, rewards, dones, info = self.env.step(actions_dict)
+            next_obs, rewards, dones, info = self.env.step(env_actions)
 
             # 存储数据
             for agent_id in agent_ids:
