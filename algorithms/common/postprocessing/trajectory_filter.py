@@ -111,11 +111,28 @@ class TrajectoryFilter:
         processed_data: Dict[str, Any]
     ) -> Dict[str, Any]:
         """过滤单Agent轨迹"""
+        # 检查数据是否为空
+        advantages = processed_data.get("advantages", [])
+        if isinstance(advantages, np.ndarray):
+            if len(advantages) == 0:
+                # 如果数据为空，直接返回原始数据（不进行过滤）
+                return processed_data
+        elif isinstance(advantages, list) and len(advantages) == 0:
+            return processed_data
+        
         # 计算优先级分数
         priority_scores = self._compute_priority_scores(processed_data)
         
+        # 如果优先级分数为空，直接返回原始数据
+        if len(priority_scores) == 0:
+            return processed_data
+        
         # 选择轨迹索引
         selected_indices = self._select_indices(priority_scores)
+        
+        # 如果选中的索引为空，直接返回原始数据
+        if len(selected_indices) == 0:
+            return processed_data
         
         # 过滤数据
         filtered_data = self._apply_filter(processed_data, selected_indices)
@@ -139,10 +156,9 @@ class TrajectoryFilter:
         filtered_data = {}
         
         for agent_id, data in processed_data.items():
-            # 为每个agent单独过滤
-            agent_processed = {agent_id: data}
-            agent_filtered = self._filter_single_agent_trajectories(agent_processed)
-            filtered_data[agent_id] = agent_filtered[agent_id]
+            # 为每个agent单独过滤（直接传递data，而不是{agent_id: data}）
+            agent_filtered = self._filter_single_agent_trajectories(data)
+            filtered_data[agent_id] = agent_filtered
         
         return filtered_data
     
@@ -217,9 +233,20 @@ class TrajectoryFilter:
             if isinstance(rewards, list):
                 rewards = np.array(rewards)
             
-            # 归一化各项分数
-            adv_norm = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
-            reward_norm = (rewards - rewards.mean()) / (rewards.std() + 1e-8) if len(rewards) > 0 else np.zeros_like(advantages)
+            # 检查数据是否为空
+            if len(advantages) == 0:
+                return np.array([])
+            
+            # 归一化各项分数（添加空数组检查）
+            if len(advantages) > 0 and advantages.std() > 1e-8:
+                adv_norm = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+            else:
+                adv_norm = np.zeros_like(advantages)
+            
+            if len(rewards) > 0 and rewards.std() > 1e-8:
+                reward_norm = (rewards - rewards.mean()) / (rewards.std() + 1e-8)
+            else:
+                reward_norm = np.zeros_like(advantages)
             
             # 计算多样性分数
             diversity_scores = np.ones(len(advantages))
@@ -227,10 +254,14 @@ class TrajectoryFilter:
                 obs_array = np.array(obs)
                 if obs_array.ndim > 2:
                     obs_array = obs_array.reshape(len(obs_array), -1)
-                for i in range(len(obs_array)):
-                    distances = np.linalg.norm(obs_array - obs_array[i], axis=1)
-                    diversity_scores[i] = np.mean(distances)
-                diversity_scores = (diversity_scores - diversity_scores.mean()) / (diversity_scores.std() + 1e-8)
+                if len(obs_array) > 0:
+                    for i in range(len(obs_array)):
+                        distances = np.linalg.norm(obs_array - obs_array[i], axis=1)
+                        diversity_scores[i] = np.mean(distances)
+                    if diversity_scores.std() > 1e-8:
+                        diversity_scores = (diversity_scores - diversity_scores.mean()) / (diversity_scores.std() + 1e-8)
+                    else:
+                        diversity_scores = np.zeros_like(advantages)
             
             # 加权组合（优势0.5，奖励0.3，多样性0.2）
             mixed_scores = 0.5 * adv_norm + 0.3 * reward_norm + 0.2 * diversity_scores
@@ -263,9 +294,14 @@ class TrajectoryFilter:
             # 按百分位数过滤
             threshold = np.percentile(priority_scores, (1 - self.filter_ratio) * 100)
             selected = np.where(priority_scores >= threshold)[0]
+            # 确保至少选择一个（如果数据不为空）
+            if len(selected) == 0 and len(priority_scores) > 0:
+                selected = np.array([np.argmax(priority_scores)])
         else:
             # Top-K或其他策略
             num_select = max(1, int(len(priority_scores) * self.filter_ratio))
+            # 确保不超过实际数据量
+            num_select = min(num_select, len(priority_scores))
             selected = np.argsort(priority_scores)[-num_select:]
         
         return selected
@@ -316,38 +352,55 @@ class TrajectoryFilter:
         Returns:
             权重数组
         """
+        # 检查选中的索引是否为空
+        if len(selected_indices) == 0:
+            return np.array([])
+        
         selected_scores = priority_scores[selected_indices]
+        
+        # 检查选中的分数是否为空
+        if len(selected_scores) == 0:
+            return np.array([])
         
         if self.reweight_scheme == "linear":
             # 线性权重：归一化到[0.5, 1.5]
-            min_score = selected_scores.min()
-            max_score = selected_scores.max()
-            if max_score > min_score:
-                weights = 0.5 + (selected_scores - min_score) / (max_score - min_score)
+            if len(selected_scores) > 0:
+                min_score = selected_scores.min()
+                max_score = selected_scores.max()
+                if max_score > min_score:
+                    weights = 0.5 + (selected_scores - min_score) / (max_score - min_score)
+                else:
+                    weights = np.ones(len(selected_scores))
             else:
-                weights = np.ones(len(selected_scores))
+                weights = np.ones(len(selected_indices))
         
         elif self.reweight_scheme == "exponential":
             # 指数权重：exp(归一化分数)
-            min_score = selected_scores.min()
-            max_score = selected_scores.max()
-            if max_score > min_score:
-                normalized = (selected_scores - min_score) / (max_score - min_score)
-                weights = np.exp(normalized)
-                weights = weights / weights.mean()  # 归一化到均值1
+            if len(selected_scores) > 0:
+                min_score = selected_scores.min()
+                max_score = selected_scores.max()
+                if max_score > min_score:
+                    normalized = (selected_scores - min_score) / (max_score - min_score)
+                    weights = np.exp(normalized)
+                    weights = weights / weights.mean()  # 归一化到均值1
+                else:
+                    weights = np.ones(len(selected_scores))
             else:
-                weights = np.ones(len(selected_scores))
+                weights = np.ones(len(selected_indices))
         
         elif self.reweight_scheme == "inverse":
             # 反比例权重：1 / (1 + 归一化分数)
-            min_score = selected_scores.min()
-            max_score = selected_scores.max()
-            if max_score > min_score:
-                normalized = (selected_scores - min_score) / (max_score - min_score)
-                weights = 1.0 / (1.0 + normalized)
-                weights = weights / weights.mean()  # 归一化到均值1
+            if len(selected_scores) > 0:
+                min_score = selected_scores.min()
+                max_score = selected_scores.max()
+                if max_score > min_score:
+                    normalized = (selected_scores - min_score) / (max_score - min_score)
+                    weights = 1.0 / (1.0 + normalized)
+                    weights = weights / weights.mean()  # 归一化到均值1
+                else:
+                    weights = np.ones(len(selected_scores))
             else:
-                weights = np.ones(len(selected_scores))
+                weights = np.ones(len(selected_indices))
         
         else:
             # 默认均匀权重

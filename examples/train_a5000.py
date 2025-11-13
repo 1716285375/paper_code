@@ -332,15 +332,19 @@ def main():
         if tracking_config.get("enabled", True):
             experiment_name = tracking_config.get("name") or f"{args.algorithm}_a5000_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
             
+            trackers_list = []
+            
             # WandB
             if tracking_config.get("wandb", {}).get("enabled", False):
                 try:
                     wandb_config = tracking_config.get("wandb", {})
-                    tracker = WandBTracker(
-                        project_name=wandb_config.get("project", "marl-a5000"),
-                        experiment_name=experiment_name,
+                    wandb_tracker = WandBTracker()
+                    wandb_tracker.init(
+                        project=wandb_config.get("project", "marl-a5000"),
+                        name=wandb_config.get("name") or experiment_name,
                         config=config,
                     )
+                    trackers_list.append(wandb_tracker)
                     print(f"✓ WandB跟踪已启用: {experiment_name}")
                 except Exception as e:
                     print(f"⚠ WandB初始化失败: {e}")
@@ -349,30 +353,36 @@ def main():
             if tracking_config.get("tensorboard", {}).get("enabled", True):
                 try:
                     tb_config = tracking_config.get("tensorboard", {})
-                    tb_tracker = TensorBoardTracker(
-                        experiment_name=tb_config.get("experiment_name", experiment_name),
-                        log_dir="runs",
+                    tb_tracker = TensorBoardTracker(log_dir="runs")
+                    tb_tracker.init(
+                        project=tb_config.get("experiment_name", experiment_name),
+                        name=experiment_name,
+                        config=config,
                     )
-                    if tracker is None:
-                        tracker = tb_tracker
-                    else:
-                        # 同时使用WandB和TensorBoard
-                        tracker = ExperimentTracker([tracker, tb_tracker])
+                    trackers_list.append(tb_tracker)
                     print(f"✓ TensorBoard跟踪已启用")
                 except Exception as e:
                     print(f"⚠ TensorBoard初始化失败: {e}")
+            
+            # 如果有多个tracker，使用ExperimentTracker组合
+            if len(trackers_list) == 1:
+                tracker = trackers_list[0]
+            elif len(trackers_list) > 1:
+                tracker = ExperimentTracker(trackers_list)
     
     # 创建数据管理器
     data_manager = None
     data_saving_config = config.get("data_saving", {})
     if data_saving_config.get("enabled", False):
         output_dir = data_saving_config.get("output_dir", "training_data")
+        # 创建带时间戳的子目录
+        experiment_name = f"{args.algorithm}_a5000_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        full_output_dir = Path(output_dir) / experiment_name
         data_manager = TrainingDataManager(
-            output_dir=output_dir,
-            experiment_name=f"{args.algorithm}_a5000_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+            output_dir=str(full_output_dir),
             save_format=data_saving_config.get("format", "both"),
         )
-        print(f"✓ 数据保存已启用: {output_dir}")
+        print(f"✓ 数据保存已启用: {full_output_dir}")
     
     # 创建训练器
     trainer = TrainerClass(
