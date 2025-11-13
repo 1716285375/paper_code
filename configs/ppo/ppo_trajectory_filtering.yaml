@@ -1,0 +1,61 @@
+# PPO with Trajectory Filtering配置示例
+# 用于Trajectory-Filtering PPO for Multi-Agent Policy Transfer
+
+env:
+  name: "magent2:battle_v4"
+  map_size: 20
+  max_cycles: 200
+
+training:
+  num_updates: 1000
+  batch_size: 128
+  num_epochs: 4
+  learning_rate: 3e-4
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_coef: 0.2
+  value_coef: 0.5
+  entropy_coef: 0.01
+  max_grad_norm: 0.5
+  
+  # 轨迹过滤配置
+  use_trajectory_filter: true
+  filter_strategy: "mixed"  # 可选: top_k, percentile, advantage_based, reward_based, diversity_based, mixed
+  filter_ratio: 0.6  # 保留60%的轨迹（0-1之间）
+  reweight_enabled: true  # 启用重加权
+  reweight_scheme: "linear"  # 可选: linear, exponential, inverse
+  # segment_length: null  # 可选：轨迹分段长度（None表示不分段）
+
+  eval_freq: 10
+  save_freq: 50
+  log_freq: 1
+
+agent:
+  type: "ppo"
+  obs_dim: 845  # Magent2观测维度
+  action_dim: 21  # Magent2动作维度
+  
+  encoder:
+    type: "networks/mlp"
+    params:
+      in_dim: 845
+      hidden_dims: [128, 128]
+  
+  policy_head:
+    type: "policy_heads/discrete"
+    params:
+      hidden_dims: [64]
+  
+  value_head:
+    type: "value_heads/mlp"
+    params:
+      hidden_dims: [64]
+  
+  optimizer:
+    type: "optimizers/adam"
+    params:
+      lr: 3e-4
+
+device: "cuda"
+seed: 42
+

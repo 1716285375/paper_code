@@ -1,0 +1,121 @@
+# PPO自博弈训练配置 - A5000 GPU优化版本
+# 针对NVIDIA RTX A5000 (24GB显存)优化
+# 充分利用24GB显存，使用更大的batch size和网络规模
+
+# 环境配置
+env:
+  name: "magent2:battle_v4"
+  map_size: 45  # 较大地图，充分利用显存
+  minimap_mode: false
+  max_cycles: 200  # 较长的episode
+  step_reward: -0.005
+  dead_penalty: -0.1
+  attack_penalty: -0.1
+  attack_opponent_reward: 0.2
+
+# Agent配置（大网络规模）
+agent:
+  type: "ppo"
+  obs_dim: 845
+  action_dim: 21
+  
+  encoder:
+    type: "networks/mlp"
+    params:
+      in_dim: 845
+      hidden_dims: [512, 256, 128]  # 大网络，充分利用显存
+      use_layer_norm: true
+      dropout: 0.0
+  
+  policy_head:
+    type: "policy_heads/discrete"
+    params:
+      hidden_dims: [128]  # 较大的策略头
+  
+  value_head:
+    type: "value_heads/mlp"
+    params:
+      hidden_dims: [128]  # 较大的价值头
+  
+  optimizer:
+    type: "optimizers/adam"
+    params:
+      lr: 3e-4
+      scheduler: "linear"
+      warmup_steps: 2000
+      total_steps: 200000
+      weight_decay: 0.0
+      max_grad_norm: 0.5
+
+# 训练配置
+training:
+  num_updates: 5000  # 更多更新次数
+  max_steps_per_episode: 200
+  num_epochs: 4
+  batch_size: 2048  # 大batch size，充分利用显存
+  clip_coef: 0.2
+  value_coef: 0.5
+  entropy_coef: 0.01
+  gamma: 0.99
+  gae_lambda: 0.95
+  vf_clip_param: 10.0  # 价值函数裁剪
+  
+  # 轨迹过滤配置（可选，推荐启用）
+  use_trajectory_filter: true
+  filter_strategy: "mixed"  # 混合策略：结合优势、奖励和多样性
+  filter_ratio: 0.7  # 保留70%的高质量轨迹
+  reweight_enabled: true  # 启用重加权
+  reweight_scheme: "linear"  # 线性权重
+  # segment_length: null  # 可选：轨迹分段
+  
+  # 自博弈配置
+  self_play_update_freq: 5  # 每5个更新更新对手策略
+  self_play_mode: "pool"  # 使用策略池
+  use_policy_pool: true
+  policy_pool_size: 20  # 更大的策略池
+  opponent_pool_strategy: "pfsp"  # PFSP采样策略
+  
+  # 主团队和对手团队
+  main_team: "team_red"
+  opponent_team: "team_blue"
+  
+  # 评估和保存
+  eval_freq: 50
+  save_freq: 100
+  log_freq: 10
+  
+  # Checkpoint目录
+  checkpoint_dir: "checkpoints/ppo_a5000"
+
+# 设备配置
+device: "cuda"  # 将根据--gpu参数覆盖
+
+# 随机种子
+seed: 42
+
+# 实验跟踪配置
+tracking:
+  enabled: true
+  
+  # WandB配置
+  wandb:
+    enabled: true
+    project: "marl-a5000"
+    name: null  # 自动生成
+  
+  # TensorBoard配置
+  tensorboard:
+    enabled: true
+    experiment_name: "ppo_a5000"
+
+# 训练数据保存配置
+data_saving:
+  enabled: true
+  output_dir: "training_data/ppo_a5000"
+  format: "both"  # json和csv
+  
+  # 视频录制配置
+  record_video:
+    enabled: false  # 评估时录制视频（可选）
+    fps: 30
+

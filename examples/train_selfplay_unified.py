@@ -407,6 +407,18 @@ def main():
                     config=config,
                 )
                 tracker = tb_tracker
+                # 验证初始化状态
+                if tracker.is_initialized:
+                    print(f"✓ TensorBoard跟踪器初始化成功")
+                    # 获取实际的日志目录
+                    if hasattr(tracker, "_writer") and tracker._writer is not None:
+                        log_dir = tracker._writer.log_dir
+                        print(f"  TensorBoard日志目录: {log_dir}")
+                        print(f"  启动TensorBoard: tensorboard --logdir runs/")
+                    else:
+                        print(f"  ⚠️  TensorBoard Writer未创建")
+                else:
+                    print(f"  ⚠️  TensorBoard跟踪器初始化失败")
             elif tracker_type == "wandb":
                 # WandBTracker需要先初始化，然后调用init方法
                 wandb_tracker = WandBTracker()
@@ -419,12 +431,20 @@ def main():
                 tracker = wandb_tracker
         except ImportError as e:
             print(f"⚠️  跟踪器初始化失败: {e}")
+            print("  可能原因：")
+            print("  1. tensorboard未安装: pip install tensorboard")
+            print("  2. Python 3.12+兼容性问题: pip install tensorboard --upgrade")
+            print("  3. 或使用替代方案: pip install tensorboardX")
             print("  继续训练，但不记录指标到跟踪器")
             tracker = None
         except Exception as e:
             print(f"⚠️  跟踪器初始化失败: {e}")
+            import traceback
+            traceback.print_exc()
             print("  继续训练，但不记录指标到跟踪器")
             tracker = None
+    else:
+        print("⚠️  跟踪功能未启用（tracking.enabled = false）")
     
     # 创建数据管理器
     data_manager = None

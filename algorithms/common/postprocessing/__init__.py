@@ -11,9 +11,13 @@
 # ------------------------------------------------------------
 
 from .centralized_critic import centralized_critic_postprocessing, _get_opponent_actions
+from .trajectory_filter import trajectory_filter_postprocessing, TrajectoryFilter, FilterStrategy
 
 __all__ = [
     "centralized_critic_postprocessing",
     "_get_opponent_actions",
+    "trajectory_filter_postprocessing",
+    "TrajectoryFilter",
+    "FilterStrategy",
 ]
 

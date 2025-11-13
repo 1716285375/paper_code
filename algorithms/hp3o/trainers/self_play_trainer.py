@@ -62,6 +62,7 @@ class SelfPlayHP3OTrainer(HP3OTrainer):
         """
         # 调用父类初始化
         super().__init__(agent, env, config, logger, tracker)
+        self.use_tqdm = config.get("use_tqdm", True)
         
         # 自博弈参数
         self.main_team = main_team
@@ -137,6 +138,33 @@ class SelfPlayHP3OTrainer(HP3OTrainer):
         # 确保agent处于训练模式
         self.agent.to_training_mode()
         
+        progress_bar = None
+        if self.use_tqdm:
+            try:
+                from tqdm.auto import tqdm
+
+                total_updates = self.update_count + num_updates
+                progress_bar = tqdm(
+                    total=total_updates,
+                    initial=self.update_count,
+                    desc="HP3O Self-Play",
+                    leave=False,
+                )
+            except ImportError:
+                progress_bar = None
+                if self.logger:
+                    message = "tqdm is not available, progress bar disabled. Run `pip install tqdm` to enable."
+                    if hasattr(self.logger, "logger"):
+                        self.logger.logger.warning(message)
+                    elif hasattr(self.logger, "warning"):
+                        self.logger.warning(message)
+                    elif hasattr(self.logger, "info"):
+                        self.logger.info(message)
+                    else:
+                        print(message)
+                else:
+                    print("tqdm is not available, progress bar disabled. Run `pip install tqdm` to enable.")
+
         for update in range(num_updates):
             # 收集rollout数据
             rollout_data = self.rollout_collector.collect()
@@ -153,10 +181,39 @@ class SelfPlayHP3OTrainer(HP3OTrainer):
             self.step_count += len(rollout_data.get("obs", [])) if not self.is_multi_agent else sum(
                 len(data.get("obs", [])) for data in rollout_data.values()
             )
+
+            avg_reward = None
+            total_reward = None
+            if self.is_multi_agent:
+                reward_arrays = []
+                for agent_id, data in rollout_data.items():
+                    if isinstance(data, dict) and "rewards" in data and len(data["rewards"]) > 0:
+                        reward_arrays.append(np.asarray(data["rewards"], dtype=np.float32).reshape(-1))
+                if reward_arrays:
+                    concatenated = np.concatenate(reward_arrays)
+                    if concatenated.size > 0:
+                        avg_reward = float(np.mean(concatenated))
+                        total_reward = float(np.sum(concatenated))
+            else:
+                rewards = rollout_data.get("rewards")
+                if rewards is not None:
+                    rewards_array = np.asarray(rewards, dtype=np.float32).reshape(-1)
+                    if rewards_array.size > 0:
+                        avg_reward = float(np.mean(rewards_array))
+                        total_reward = float(np.sum(rewards_array))
             
             # 记录日志
             if self.update_count % self.log_freq == 0:
                 self._log_metrics(metrics, rollout_data)
+            elif avg_reward is not None and self.logger:
+                if hasattr(self.logger, "logger"):
+                    self.logger.logger.info(
+                        f"Update {self.update_count}: avg_reward={avg_reward:.4f}, total_reward={total_reward:.4f}"
+                    )
+                elif hasattr(self.logger, "info"):
+                    self.logger.info(
+                        f"Update {self.update_count}: avg_reward={avg_reward:.4f}, total_reward={total_reward:.4f}"
+                    )
             
             # 自博弈更新：更新对手策略
             if self.update_count % self.self_play_update_freq == 0:
@@ -221,6 +278,19 @@ class SelfPlayHP3OTrainer(HP3OTrainer):
             if self.update_count % self.save_freq == 0:
                 checkpoint_dir = self.config.get("checkpoint_dir", "checkpoints")
                 self.save(f"{checkpoint_dir}/hp3o_selfplay_checkpoint_{self.update_count}.pt")
+
+            if progress_bar:
+                progress_bar.update(1)
+                postfix = {}
+                if avg_reward is not None:
+                    postfix["avg_reward"] = f"{avg_reward:.3f}"
+                if total_reward is not None:
+                    postfix["total_reward"] = f"{total_reward:.3f}"
+                if postfix:
+                    progress_bar.set_postfix(postfix)
+
+        if progress_bar:
+            progress_bar.close()
     
     def _train_step_self_play(self, processed_data: Dict[str, Any]) -> Dict[str, float]:
         """

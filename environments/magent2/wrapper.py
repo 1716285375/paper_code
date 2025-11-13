@@ -56,6 +56,11 @@ class Magent2ParallelBase(AgentParrelEnv):
     MAgent2并行环境包装器基类
 
     提供通用的环境接口实现，所有MAgent2环境包装器都应该继承此类。
+    
+    公共接口：
+        - agents: 获取当前活跃的Agent ID列表（property）
+        - n_agents: 获取Agent数量（property，继承自基类，等于 len(agents)）
+        - get_env_info(): 获取环境信息字典，包含 n_agents 字段
     """
 
     def __init__(self, env_module: Any, env_name: str, **kwargs) -> None:
@@ -199,6 +204,12 @@ class Magent2ParallelBase(AgentParrelEnv):
 
         Returns:
             Agent ID列表
+        
+        Note:
+            可以通过 `n_agents` property 获取Agent数量（继承自基类）：
+            >>> env = Magent2BattleV4Parallel(map_size=20)
+            >>> agent_list = env.agents  # 获取Agent ID列表
+            >>> agent_count = env.n_agents  # 获取Agent数量（等于 len(agent_list)）
         """
         return self._agents
 

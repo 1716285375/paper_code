@@ -1,0 +1,109 @@
+# PPO with Trajectory Filtering - A5000 GPU优化版本
+# Trajectory-Filtering PPO for Multi-Agent Policy Transfer
+# 针对NVIDIA RTX A5000 (24GB显存)优化
+
+# 环境配置
+env:
+  name: "magent2:battle_v4"
+  map_size: 45  # 较大地图
+  minimap_mode: false
+  max_cycles: 200
+  step_reward: -0.005
+  dead_penalty: -0.1
+  attack_penalty: -0.1
+  attack_opponent_reward: 0.2
+
+# Agent配置（大网络规模）
+agent:
+  type: "ppo"
+  obs_dim: 845
+  action_dim: 21
+  
+  encoder:
+    type: "networks/mlp"
+    params:
+      in_dim: 845
+      hidden_dims: [512, 256, 128]  # 大网络
+      use_layer_norm: true
+      dropout: 0.0
+  
+  policy_head:
+    type: "policy_heads/discrete"
+    params:
+      hidden_dims: [128]
+  
+  value_head:
+    type: "value_heads/mlp"
+    params:
+      hidden_dims: [128]
+  
+  optimizer:
+    type: "optimizers/adam"
+    params:
+      lr: 3e-4
+      scheduler: "linear"
+      warmup_steps: 2000
+      total_steps: 200000
+      weight_decay: 0.0
+      max_grad_norm: 0.5
+
+# 训练配置
+training:
+  num_updates: 5000
+  max_steps_per_episode: 200
+  num_epochs: 4
+  batch_size: 2048  # 大batch size
+  clip_coef: 0.2
+  value_coef: 0.5
+  entropy_coef: 0.01
+  gamma: 0.99
+  gae_lambda: 0.95
+  vf_clip_param: 10.0
+  
+  # 轨迹过滤配置（核心功能）
+  use_trajectory_filter: true
+  filter_strategy: "mixed"  # 混合策略：优势(50%) + 奖励(30%) + 多样性(20%)
+  filter_ratio: 0.7  # 保留70%的高质量轨迹
+  reweight_enabled: true  # 启用重加权
+  reweight_scheme: "linear"  # 线性权重方案
+  # segment_length: null  # 可选：轨迹分段长度
+  
+  # 自博弈配置
+  self_play_update_freq: 5
+  self_play_mode: "pool"
+  use_policy_pool: true
+  policy_pool_size: 20
+  opponent_pool_strategy: "pfsp"
+  
+  main_team: "team_red"
+  opponent_team: "team_blue"
+  
+  eval_freq: 50
+  save_freq: 100
+  log_freq: 10
+  
+  checkpoint_dir: "checkpoints/ppo_tf_a5000"
+
+# 设备配置
+device: "cuda"
+
+# 随机种子
+seed: 42
+
+# 实验跟踪配置
+tracking:
+  enabled: true
+  wandb:
+    enabled: true
+    project: "marl-trajectory-filtering"
+    name: null
+  tensorboard:
+    enabled: true
+    experiment_name: "ppo_tf_a5000"
+
+# 数据保存配置
+data_saving:
+  enabled: true
+  output_dir: "training_data/ppo_tf_a5000"
+  format: "both"
+

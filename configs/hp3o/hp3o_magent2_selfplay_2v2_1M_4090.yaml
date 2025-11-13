@@ -1,0 +1,109 @@
+# HP3O自博弈训练配置 - 2v2 Magent2环境，6小时训练，RTX 4090优化版
+# HP3O (High-Performance PPO with Trajectory Replay) 算法
+# 针对2v2小规模对战优化，训练红方策略
+# RTX 4090 (24GB VRAM) 优化配置：更大batch size、更大网络、更快训练
+
+# 环境配置
+env:
+  name: "magent2:battle_v4"
+  map_size: 12  # 2v2使用12x12地图
+  max_cycles: 1000  # Episode最大步数（更长的episode）
+  minimap_mode: false
+
+# 训练配置
+training:
+  num_updates: 1000000  # 训练更新次数（超长时间训练）
+  batch_size: 512  # RTX 4090显存充足，使用更大的batch size提升训练效率
+  num_epochs: 15  # RTX 4090优化：增加训练轮数，充分利用显存和计算能力
+  max_steps_per_episode: 200  # Episode最大步数（与max_cycles一致）
+  
+  # PPO核心参数
+  clip_coef: 0.2
+  value_coef: 0.5
+  entropy_coef: 0.01
+  vf_clip_param: 10.0  # 价值函数裁剪参数
+  
+  # GAE参数
+  gamma: 0.99
+  gae_lambda: 0.95
+  
+  # 学习率
+  lr: 3e-4
+  
+  # 梯度裁剪
+  max_grad_norm: 0.5
+  
+  # HP3O特定参数（轨迹重放）
+  trajectory_buffer_size: 20  # RTX 4090优化：增加轨迹缓冲区，存储更多历史轨迹
+  trajectory_sample_size: 4  # RTX 4090优化：增加采样轨迹数量，提升轨迹重放效果
+  data_sample_size: 1024  # RTX 4090优化：进一步增加从轨迹中采样数据量，充分利用显存
+  threshold: 0.5  # 轨迹筛选阈值（用于use_best_value）
+  use_best_value: false  # 是否使用最佳轨迹的价值函数（设置为true可启用价值函数增强）
+  
+  # 自博弈参数
+  self_play_update_freq: 10  # 每N个更新更新一次对手策略
+  self_play_mode: "pool"  # 自博弈模式：copy（直接复制）或 pool（策略池采样）
+  use_policy_pool: true  # 是否使用策略池
+  policy_pool_size: 30  # RTX 4090优化：增加策略池大小，提供更多策略多样性
+  opponent_pool_strategy: "pfsp"  # 策略池采样策略：uniform, elo, pfsp
+  
+  # 评估和保存
+  eval_freq: 1000  # 评估频率（适应1000000轮训练，避免过于频繁）
+  save_freq: 5000  # 保存频率（每5000轮保存一次，避免产生过多checkpoint）
+  log_freq: 100  # 日志记录频率（平衡日志量和信息量）
+
+# Agent配置
+agent:
+  type: "ppo"  # 使用标准PPO Agent
+  obs_dim: 845  # Magent2观测维度（与map_size无关，保持845）
+  action_dim: 21  # Magent2动作维度
+  
+  # 编码器（RTX 4090显存充足，使用更大的网络提升表达能力）
+  encoder:
+    type: "networks/mlp"  # 使用完整路径：networks/mlp, networks/cnn, networks/lstm, networks/gru
+    params:
+      in_dim: 845
+      hidden_dims: [512, 256, 128]  # RTX 4090优化：增加网络深度和宽度
+      use_layer_norm: true
+      dropout: 0.0
+  
+  # Policy Head
+  policy_head:
+    type: "policy_heads/discrete"  # 离散动作空间
+    params:
+      hidden_dims: [128]  # RTX 4090优化：增大策略头
+  
+  # Value Head
+  value_head:
+    type: "value_heads/mlp"  # MLP价值头
+    params:
+      hidden_dims: [128]  # RTX 4090优化：增大价值头
+  
+  # 优化器配置
+  optimizer:
+    type: "optimizers/adam"  # Adam优化器
+    params:
+      lr: 3e-4
+      weight_decay: 0.0
+      max_grad_norm: 0.5
+      scheduler: "linear"  # 线性学习率调度
+      warmup_steps: 100000  # RTX 4090优化：warmup步数（1000000 updates * 10%）
+      total_steps: 100000000  # 总步数（1000000 updates * 100 steps per update估算）
+
+# 数据保存配置
+data_saving:
+  enabled: true
+  format: "json"  # json, csv, both
+  save_freq: 100  # RTX 4090优化：每N个更新保存一次（适应长时间训练，避免过多文件）
+
+# 日志和追踪配置
+logging:
+  log_dir: "logs"
+  log_to_file: true
+  log_to_console: true
+
+tracking:
+  enabled: true
+  type: "tensorboard"
+  project: "marl-selfplay-2v2"
+

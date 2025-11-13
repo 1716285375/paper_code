@@ -139,6 +139,11 @@ class PPOTrainer(BaseAlgorithmTrainer):
             for i in range(0, num_samples, self.batch_size):
                 batch_indices = indices[i : i + self.batch_size]
 
+                # 获取权重（如果轨迹过滤启用了重加权）
+                weights = None
+                if "weights" in processed_data:
+                    weights = processed_data["weights"][batch_indices]
+                
                 batch = {
                     "obs": obs[batch_indices],
                     "actions": actions[batch_indices],
@@ -150,6 +155,10 @@ class PPOTrainer(BaseAlgorithmTrainer):
                     "entropy_coef": self.entropy_coef,
                     "vf_clip_param": self.config.get("vf_clip_param"),
                 }
+                
+                # 如果启用了重加权，添加权重
+                if weights is not None:
+                    batch["weights"] = weights
                 # PPO-Penalty模式不使用clip_coef
                 if not self.use_penalty:
                     batch["clip_coef"] = self.clip_coef

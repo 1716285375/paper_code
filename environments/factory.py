@@ -71,8 +71,10 @@ def make_env(env_id: str, **kwargs: Any) -> Env:
         name = env_id.split(":", 1)[1]
         if name == "battle_v4":
             from .magent2.wrapper import Magent2BattleV4Parallel
-
             return Magent2BattleV4Parallel(**kwargs)
+        elif name == "adversarial_pursuit_v4":
+            from .magent2.wrapper import Magent2AdversarialPursuitV4Parallel
+            return
         raise ValueError(f"不支持的magent2环境名称: {name}。支持的环境: ['battle_v4']")
 
     raise ValueError(

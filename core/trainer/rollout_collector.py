@@ -36,6 +36,7 @@ class RolloutCollector:
         env: Env,
         max_steps_per_episode: int = 1000,
         is_multi_agent: bool = False,
+        verbose: bool = False,
     ):
         """
         初始化Rollout收集器
@@ -50,6 +51,7 @@ class RolloutCollector:
         self.env = env
         self.max_steps_per_episode = max_steps_per_episode
         self.is_multi_agent = is_multi_agent
+        self.verbose = verbose
 
     def collect(self) -> Dict[str, Any]:
         """
@@ -95,7 +97,8 @@ class RolloutCollector:
         
         # 每25步输出一次进度
         progress_freq = max(25, self.max_steps_per_episode // 40)
-        print(f"开始收集rollout数据（单Agent，最多{self.max_steps_per_episode}步）...", flush=True)
+        if self.verbose:
+            print(f"开始收集rollout数据（单Agent，最多{self.max_steps_per_episode}步）...", flush=True)
 
         while not done and step < self.max_steps_per_episode:
             # 收集全局状态（如果支持）
@@ -125,11 +128,11 @@ class RolloutCollector:
             step += 1
             
             # 输出进度
-            if step % progress_freq == 0:
+            if self.verbose and step % progress_freq == 0:
                 print(f"收集进度: {step}/{self.max_steps_per_episode} 步", end='\r', flush=True)
         
         # 清理进度输出
-        if step > 0:
+        if self.verbose and step > 0:
             print()  # 换行
 
         result = {
@@ -178,7 +181,8 @@ class RolloutCollector:
         
         # 输出开始收集的提示
         num_agents = len(agent_ids)
-        print(f"开始收集rollout数据（{num_agents}个Agent，最多{self.max_steps_per_episode}步）...", flush=True)
+        if self.verbose:
+            print(f"开始收集rollout数据（{num_agents}个Agent，最多{self.max_steps_per_episode}步）...", flush=True)
 
         while not done and step < self.max_steps_per_episode:
             # 收集全局状态（如果支持）
@@ -191,13 +195,17 @@ class RolloutCollector:
             
             # 批量选择动作（可能很慢，特别是首次运行时）
             # 首次运行时显示进度，后续只在每100步显示一次
-            show_progress = (step == 0) or (step % 100 == 0 and step > 0)
+            show_progress = self.verbose and ((step == 0) or (step % 100 == 0 and step > 0))
             if show_progress and step == 0:
                 print("  正在选择初始动作（首次forward pass可能较慢，请耐心等待）...", flush=True)
             elif show_progress:
                 print(f"  选择动作中... (step {step})", end='\r', flush=True)
             
-            actions_dict = self.agent.act(obs, deterministic=False, show_progress=(step == 0))
+            actions_dict = self.agent.act(
+                obs,
+                deterministic=False,
+                show_progress=self.verbose and (step == 0),
+            )
             
             if show_progress and step == 0:
                 print("  ✅ 初始动作选择完成，继续收集数据...", flush=True)
@@ -230,11 +238,11 @@ class RolloutCollector:
             step += 1
             
             # 输出进度（每progress_freq步）
-            if step % progress_freq == 0:
+            if self.verbose and step % progress_freq == 0:
                 print(f"收集进度: {step}/{self.max_steps_per_episode} 步", end='\r', flush=True)
 
         # 清理进度输出
-        if step > 0:
+        if self.verbose and step > 0:
             print()  # 换行
 
         # 转换为numpy数组

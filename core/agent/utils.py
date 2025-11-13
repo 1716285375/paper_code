@@ -81,7 +81,7 @@ class ConfigurablePPOAgent(Agent, CentralizedValueMixin):
         self.obs_dim = obs_dim
         self.action_dim = action_dim
 
-        # Build encoder
+        # 构建编码器
         encoder_config = config.get(
             "encoder",
             {"type": "networks/mlp", "params": {"in_dim": obs_dim, "hidden_dims": [128, 128]}},
@@ -100,7 +100,7 @@ class ConfigurablePPOAgent(Agent, CentralizedValueMixin):
             self.encoder = CNNEncoder(in_channels=obs_shape[0], conv_channels=conv_channels).to(
                 self.device
             )
-            # Will be set after first forward
+            # 将在第一次前向传播后设置
             feature_dim = None
         elif encoder_type == "networks/lstm":
             hidden_size = encoder_params.get("hidden_size", 128)
@@ -118,7 +118,7 @@ class ConfigurablePPOAgent(Agent, CentralizedValueMixin):
             ).to(self.device)
             feature_dim = self.encoder.output_dim
         else:
-            # Try registry
+            # 尝试从注册表构建
             self.encoder = build_module_from_config(encoder_config)
             if self.encoder is None:
                 raise ValueError(f"Unknown encoder type: {encoder_type}")
@@ -127,7 +127,7 @@ class ConfigurablePPOAgent(Agent, CentralizedValueMixin):
             else:
                 feature_dim = None
 
-        # Build policy head
+        # 构建策略头
         policy_config = config.get(
             "policy_head", {"type": "policy_heads/discrete", "params": {"hidden_dims": [64]}}
         )
@@ -138,7 +138,7 @@ class ConfigurablePPOAgent(Agent, CentralizedValueMixin):
 
         if policy_type == "policy_heads/discrete":
             if feature_dim is None:
-                # Delay initialization
+                # 延迟初始化
                 self.policy_head: Optional[BasePolicyHead] = None
                 self._policy_config = (policy_type, policy_params)
             else:
@@ -152,7 +152,7 @@ class ConfigurablePPOAgent(Agent, CentralizedValueMixin):
             if self.policy_head is None:
                 raise ValueError(f"Unknown policy head type: {policy_type}")
 
-        # Build value head
+        # 构建价值头
         value_config = config.get(
             "value_head", {"type": "value_heads/mlp", "params": {"hidden_dims": [64]}}
         )
@@ -176,7 +176,7 @@ class ConfigurablePPOAgent(Agent, CentralizedValueMixin):
         else:
             self.value_head = build_module_from_config(value_config)
 
-        # Optional modules
+        # 可选模块
         self.exploration = build_module_from_config(config.get("exploration"))
         self.obs_normalizer = build_module_from_config(config.get("obs_normalizer"))
         self.adv_normalizer = build_module_from_config(config.get("adv_normalizer"))
@@ -241,14 +241,14 @@ class ConfigurablePPOAgent(Agent, CentralizedValueMixin):
             optimizer = builder.build(list(self.parameters()), opt_cfg)
             self.optimizer = AdaptiveOptimizer(optimizer, opt_cfg)
         else:
-            # Try registry
+            # 尝试从注册表构建
             optimizer = build_module_from_config(opt_config)
             if optimizer is None:
                 raise ValueError(f"Unknown optimizer type: {opt_type}")
             self.optimizer = optimizer
 
     def _ensure_heads(self, features: torch.Tensor) -> None:
-        """Lazy initialization of heads if feature_dim was unknown."""
+        """延迟初始化策略头和价值头（当feature_dim未知时）"""
         if self.policy_head is None or self.value_head is None:
             feat_dim = features.shape[-1]
             policy_type, policy_params = getattr(
@@ -281,34 +281,34 @@ class ConfigurablePPOAgent(Agent, CentralizedValueMixin):
                     )
 
     def _forward(self, obs: torch.Tensor) -> Tuple[Distribution, torch.Tensor]:
-        # Normalize observation if configured (before encoding)
+        # 如果配置了观测归一化，则先归一化（在编码之前）
         if self.obs_normalizer is not None:
-            # Flatten spatial dimensions for normalizer if needed
+            # 如果需要，展平空间维度以便归一化
             original_shape = obs.shape
             obs_flat = obs.flatten(1) if obs.dim() > 2 else obs  # (B, ...) -> (B, D)
-            # Normalize
+            # 归一化
             obs_np = obs_flat.cpu().numpy()
             obs_normalized_np = self.obs_normalizer.normalize(obs_np)
             obs_normalized = torch.as_tensor(obs_normalized_np, device=self.device, dtype=obs.dtype)
-            # Reshape back if needed (but for MLPEncoder we keep flattened)
+            # 如果需要，重新整形（但对于MLPEncoder我们保持展平状态）
             if isinstance(self.encoder, MLPEncoder) or not isinstance(self.encoder, CNNEncoder):
-                obs = obs_normalized  # Already flattened
+                obs = obs_normalized  # 已经展平
             else:
                 obs = obs_normalized.reshape(original_shape)
 
-        # Encode
+        # 编码
         if isinstance(self.encoder, (LSTMEncoder, GRUEncoder)):
-            # LSTM/GRU expects (B, T, D) - fake sequence length 1
+            # LSTM/GRU期望 (B, T, D) - 假序列长度为1
             if obs.dim() == 2:
                 obs = obs.unsqueeze(1)
             features, _ = self.encoder(obs)
         elif isinstance(self.encoder, MLPEncoder):
-            # Ensure MLPEncoder gets flattened input
+            # 确保MLPEncoder获得展平的输入
             if obs.dim() > 2:
                 obs = obs.flatten(1)  # (B, H, W, C) -> (B, H*W*C)
             features = self.encoder(obs)
         elif isinstance(self.encoder, CNNEncoder):
-            # CNN expects (B, C, H, W)
+            # CNN期望 (B, C, H, W)
             if obs.dim() == 4 and obs.shape[-1] == 5:  # (B, H, W, C)
                 obs = obs.permute(0, 3, 1, 2)  # (B, C, H, W)
             features = self.encoder(obs)
@@ -317,19 +317,19 @@ class ConfigurablePPOAgent(Agent, CentralizedValueMixin):
 
         self._ensure_heads(features)
 
-        # Get distribution and value
+        # 获取分布和价值
         dist = self.policy_head(features)
         value = self.value_head(features)
         return dist, value
 
     def act(self, observation: Any, deterministic: bool = False) -> Any:
         x = torch.as_tensor(observation, dtype=torch.float32, device=self.device)
-        # Handle different input shapes
+        # 处理不同的输入形状
         if x.dim() == 3:  # (H, W, C) or (C, H, W)
-            # Check if it's image-like (spatial dimensions)
+            # 检查是否为图像类型（空间维度）
             if x.shape[0] == 13 or x.shape[2] == 5:  # battle_v4 shape (H, W, C) = (13, 13, 5)
-                x = x.unsqueeze(0)  # Add batch dim: (1, 13, 13, 5)
-                # For MLPEncoder, we need to flatten spatial dimensions
+                x = x.unsqueeze(0)  # 添加批次维度: (1, 13, 13, 5)
+                # 对于MLPEncoder，需要展平空间维度
                 if isinstance(self.encoder, MLPEncoder) or not isinstance(self.encoder, CNNEncoder):
                     x = x.flatten(1)  # (1, 845)
             else:
@@ -337,8 +337,8 @@ class ConfigurablePPOAgent(Agent, CentralizedValueMixin):
         elif x.dim() == 1:
             x = x.unsqueeze(0)  # (1, D)
         elif x.dim() == 2:
-            # Already (B, D) or (H, W) - check if needs batch dim
-            if x.shape[0] > 20:  # Likely (H, W) spatial
+            # 已经是 (B, D) 或 (H, W) - 检查是否需要批次维度
+            if x.shape[0] > 20:  # 可能是 (H, W) 空间维度
                 x = x.flatten().unsqueeze(0)
             else:
                 x = x if x.shape[0] == 1 else x.unsqueeze(0)
@@ -346,7 +346,7 @@ class ConfigurablePPOAgent(Agent, CentralizedValueMixin):
         with torch.no_grad():
             dist, value = self._forward(x)
 
-            # Apply exploration if configured
+            # 如果配置了探索策略，则应用
             if self.exploration is not None and not deterministic:
                 logits = dist.logits if hasattr(dist, "logits") else None
                 if logits is not None:
@@ -398,8 +398,16 @@ class ConfigurablePPOAgent(Agent, CentralizedValueMixin):
         clip_coef = float(batch.get("clip_coef", 0.2))
         value_coef = float(batch.get("value_coef", 0.5))
         entropy_coef = float(batch.get("entropy_coef", 0.01))
+        
+        # 获取轨迹权重（如果轨迹过滤启用了重加权）
+        weights = None
+        if "weights" in batch:
+            weights = torch.as_tensor(batch["weights"], dtype=torch.float32, device=self.device)
+            # 归一化权重，使其均值为1（保持梯度尺度）
+            if weights.numel() > 0:
+                weights = weights / (weights.mean() + 1e-8)
 
-        # Normalize advantages if configured
+        # 如果配置了优势归一化，则归一化
         if self.adv_normalizer is not None:
             advantages = torch.as_tensor(
                 self.adv_normalizer.normalize(advantages.cpu().numpy()),
@@ -426,12 +434,16 @@ class ConfigurablePPOAgent(Agent, CentralizedValueMixin):
         logprobs = dist.log_prob(actions)
         entropy = dist.entropy().mean()
         ratio = torch.exp(logprobs - old_logprobs)
-        policy_loss = -(
-            torch.min(
-                ratio * advantages,
-                torch.clamp(ratio, 1.0 - clip_coef, 1.0 + clip_coef) * advantages,
-            )
-        ).mean()
+        
+        # 计算策略损失（支持权重）
+        policy_loss_unweighted = -torch.min(
+            ratio * advantages,
+            torch.clamp(ratio, 1.0 - clip_coef, 1.0 + clip_coef) * advantages,
+        )
+        if weights is not None:
+            policy_loss = (policy_loss_unweighted * weights).mean()
+        else:
+            policy_loss = policy_loss_unweighted.mean()
         
         # 价值函数裁剪（如果配置了vf_clip_param）
         vf_clip_param = batch.get("vf_clip_param", None)
@@ -453,10 +465,18 @@ class ConfigurablePPOAgent(Agent, CentralizedValueMixin):
             vf_loss2 = (vf_clipped - returns) ** 2
             
             # 取两者最大值（防止价值函数过度更新）
-            value_loss = torch.max(vf_loss1, vf_loss2).mean()
+            value_loss_unweighted = torch.max(vf_loss1, vf_loss2)
+            if weights is not None:
+                value_loss = (value_loss_unweighted * weights).mean()
+            else:
+                value_loss = value_loss_unweighted.mean()
         else:
-            # 不使用裁剪，直接计算MSE损失
-            value_loss = F.mse_loss(values, returns)
+            # 不使用裁剪，直接计算MSE损失（支持权重）
+            value_loss_unweighted = (values - returns) ** 2
+            if weights is not None:
+                value_loss = (value_loss_unweighted * weights).mean()
+            else:
+                value_loss = value_loss_unweighted.mean()
         
         loss = policy_loss + value_coef * value_loss - entropy_coef * entropy
 

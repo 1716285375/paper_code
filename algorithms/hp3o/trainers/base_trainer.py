@@ -89,6 +89,7 @@ class HP3OTrainer(BaseAlgorithmTrainer):
         self.value_coef = config.get("value_coef", HP3OConfig.DEFAULT_VALUE_COEF)
         self.entropy_coef = config.get("entropy_coef", HP3OConfig.DEFAULT_ENTROPY_COEF)
         self.max_grad_norm = config.get("max_grad_norm", HP3OConfig.DEFAULT_MAX_GRAD_NORM)
+        self.log_trajectory_warnings = config.get("log_trajectory_warnings", False)
         
         # 初始化轨迹缓冲区
         self._init_trajectory_buffer()
@@ -302,7 +303,7 @@ class HP3OTrainer(BaseAlgorithmTrainer):
         # 检查轨迹缓冲区是否有足够的轨迹
         if len(self.trajectory_buffer.trajectories) < self.trajectory_sample_size:
             # 如果轨迹不足，返回空指标
-            if self.logger:
+            if self.log_trajectory_warnings and self.logger:
                 if hasattr(self.logger, "logger"):
                     self.logger.logger.warning(
                         f"Not enough trajectories: {len(self.trajectory_buffer.trajectories)} < {self.trajectory_sample_size}"

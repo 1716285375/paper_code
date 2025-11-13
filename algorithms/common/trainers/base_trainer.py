@@ -112,12 +112,16 @@ class BaseAlgorithmTrainer(Trainer):
         # 判断是否为多Agent
         self.is_multi_agent = isinstance(agent, AgentManager)
         
+        # 收集器和日志设置
+        self.collector_verbose = config.get("collector_verbose", False)
+
         # 使用通用的RolloutCollector
         self.rollout_collector = RolloutCollector(
             agent=agent,
             env=env,
             max_steps_per_episode=self.max_steps_per_episode,
             is_multi_agent=self.is_multi_agent,
+            verbose=self.collector_verbose,
         )
         
         # 使用通用的Evaluator
@@ -218,6 +222,23 @@ class BaseAlgorithmTrainer(Trainer):
                 agent_manager=self.agent,
                 use_centralized_critic=self.config.get("use_centralized_critic", False),
                 opp_action_in_cc=self.config.get("opp_action_in_cc", False),
+            )
+        
+        # 轨迹过滤后处理（如果使用）
+        if self.config.get("use_trajectory_filter", False):
+            from algorithms.common.postprocessing.trajectory_filter import (
+                trajectory_filter_postprocessing,
+            )
+            
+            processed_data = trajectory_filter_postprocessing(
+                processed_data=processed_data,
+                agent_manager=self.agent,
+                use_trajectory_filter=self.config.get("use_trajectory_filter", False),
+                filter_strategy=self.config.get("filter_strategy", "top_k"),
+                filter_ratio=self.config.get("filter_ratio", 0.5),
+                segment_length=self.config.get("segment_length", None),
+                reweight_enabled=self.config.get("reweight_enabled", False),
+                reweight_scheme=self.config.get("reweight_scheme", "linear"),
             )
         
         return processed_data

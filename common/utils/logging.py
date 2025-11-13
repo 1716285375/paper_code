@@ -189,7 +189,7 @@ class LoggerManager:
         # 移除现存的 handlers, 避免拷贝
         logger.handlers.clear()
 
-        # File handler with detailed format (add first to avoid color codes)
+        # 文件处理器，使用详细格式（首先添加以避免颜色代码）
         if self.enable_file:
             # 创建带时间戳的日志文件名
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
