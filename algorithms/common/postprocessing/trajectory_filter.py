@@ -120,6 +120,16 @@ class TrajectoryFilter:
         elif isinstance(advantages, list) and len(advantages) == 0:
             return processed_data
         
+        # 确定所有数据字段的最小长度（确保索引不超出范围）
+        min_length = len(advantages) if isinstance(advantages, (list, np.ndarray)) else float('inf')
+        for key, value in processed_data.items():
+            if isinstance(value, (list, np.ndarray)) and len(value) > 0:
+                min_length = min(min_length, len(value))
+        
+        # 如果最小长度为0或无穷大，直接返回原始数据
+        if min_length == 0 or min_length == float('inf'):
+            return processed_data
+        
         # 计算优先级分数
         priority_scores = self._compute_priority_scores(processed_data)
         
@@ -127,8 +137,16 @@ class TrajectoryFilter:
         if len(priority_scores) == 0:
             return processed_data
         
+        # 确保优先级分数的长度不超过最小长度
+        if len(priority_scores) > min_length:
+            priority_scores = priority_scores[:min_length]
+        
         # 选择轨迹索引
         selected_indices = self._select_indices(priority_scores)
+        
+        # 确保选中的索引不超过最小长度
+        if len(selected_indices) > 0:
+            selected_indices = selected_indices[selected_indices < min_length]
         
         # 如果选中的索引为空，直接返回原始数据
         if len(selected_indices) == 0:
@@ -139,8 +157,10 @@ class TrajectoryFilter:
         
         # 重加权（如果启用）
         if self.reweight_enabled:
+            # 使用已验证的索引计算权重（这些索引已经在有效范围内）
             weights = self._compute_weights(priority_scores, selected_indices)
-            filtered_data["weights"] = weights
+            if len(weights) > 0:
+                filtered_data["weights"] = weights
         
         # 分段（如果启用）
         if self.segment_length is not None:
@@ -329,7 +349,14 @@ class TrajectoryFilter:
             
             if isinstance(value, (list, np.ndarray)):
                 if len(value) > 0:
-                    filtered_data[key] = np.array(value)[selected_indices]
+                    value_array = np.array(value)
+                    # 验证索引是否在有效范围内
+                    valid_indices = selected_indices[selected_indices < len(value_array)]
+                    if len(valid_indices) > 0:
+                        filtered_data[key] = value_array[valid_indices]
+                    else:
+                        # 如果没有有效索引，保留所有数据（避免空数据）
+                        filtered_data[key] = value_array
                 else:
                     filtered_data[key] = value
             else:
@@ -356,7 +383,12 @@ class TrajectoryFilter:
         if len(selected_indices) == 0:
             return np.array([])
         
-        selected_scores = priority_scores[selected_indices]
+        # 确保索引在有效范围内
+        valid_indices = selected_indices[selected_indices < len(priority_scores)]
+        if len(valid_indices) == 0:
+            return np.array([])
+        
+        selected_scores = priority_scores[valid_indices]
         
         # 检查选中的分数是否为空
         if len(selected_scores) == 0:
