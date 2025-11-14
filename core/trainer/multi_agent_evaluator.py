@@ -279,8 +279,60 @@ class MultiAgentEvaluator(Evaluator):
             # Agent选择动作
             actions_dict = self.agent.act(obs, deterministic=True)
 
+            # 从actions_dict中提取动作值（环境期望的是{agent_id: action}，而不是{agent_id: (action, logprob, value)}）
+            # 获取当前环境的活跃agent列表
+            active_agents = getattr(self.env, 'agents', None)
+            if active_agents is None:
+                # 如果没有agents属性，尝试从obs中获取
+                active_agents = list(obs.keys())
+            
+            env_actions = {}
+            for agent_id, action_data in actions_dict.items():
+                # 只包含活跃的agent
+                if agent_id not in active_agents:
+                    continue
+                
+                # 提取动作值
+                if isinstance(action_data, tuple):
+                    # 如果是元组格式 (action, logprob, value)，提取action
+                    action = action_data[0]
+                else:
+                    # 如果已经是简单动作值，直接使用
+                    action = action_data
+                
+                # 验证和转换动作
+                # 确保动作是整数类型
+                if isinstance(action, np.ndarray):
+                    action = int(action.item() if hasattr(action, 'item') else action)
+                elif hasattr(action, 'item'):  # 处理torch.Tensor等类型
+                    action = int(action.item())
+                else:
+                    action = int(action)
+                
+                # 验证动作值在有效范围内（0 到 action_dim-1）
+                action_dim = getattr(self.env, 'action_space', None)
+                if action_dim is not None:
+                    if hasattr(action_dim, 'n'):
+                        max_action = action_dim.n - 1
+                    elif isinstance(action_dim, dict) and agent_id in action_dim:
+                        max_action = action_dim[agent_id].n - 1 if hasattr(action_dim[agent_id], 'n') else 20
+                    else:
+                        max_action = 20  # 默认MAgent2 battle_v4的动作空间是21（0-20）
+                else:
+                    max_action = 20  # 默认值
+                
+                # 裁剪动作到有效范围
+                action = max(0, min(action, max_action))
+                
+                env_actions[agent_id] = action
+
+            # 验证env_actions不为空
+            if not env_actions:
+                # 为所有活跃agent提供默认动作
+                env_actions = {aid: 0 for aid in active_agents}
+
             # 环境步进
-            next_obs, rewards, dones, info = self.env.step(actions_dict)
+            next_obs, rewards, dones, info = self.env.step(env_actions)
 
             # 累计奖励
             if isinstance(rewards, dict):
@@ -296,14 +348,40 @@ class MultiAgentEvaluator(Evaluator):
                     for team_name, team_agents in self.team_names.items():
                         if agent_id in team_agents:
                             team_rewards[team_name] += reward
-                            team_actions[team_name].append(actions_dict.get(agent_id))
+                            # 从actions_dict中提取动作值（可能是元组）
+                            action_data = actions_dict.get(agent_id)
+                            if isinstance(action_data, tuple):
+                                action = action_data[0]
+                            else:
+                                action = action_data
+                            # 转换为整数
+                            if isinstance(action, np.ndarray):
+                                action = int(action.item() if hasattr(action, 'item') else action)
+                            elif hasattr(action, 'item'):
+                                action = int(action.item())
+                            else:
+                                action = int(action)
+                            team_actions[team_name].append(action)
                             break
 
                     # 动作分布
                     if agent_id not in action_distributions:
                         action_distributions[agent_id] = []
-                    action_distributions[agent_id].append(actions_dict.get(agent_id))
-                    all_actions.append(actions_dict.get(agent_id))
+                    # 从actions_dict中提取动作值（可能是元组）
+                    action_data = actions_dict.get(agent_id)
+                    if isinstance(action_data, tuple):
+                        action = action_data[0]
+                    else:
+                        action = action_data
+                    # 转换为整数
+                    if isinstance(action, np.ndarray):
+                        action = int(action.item() if hasattr(action, 'item') else action)
+                    elif hasattr(action, 'item'):
+                        action = int(action.item())
+                    else:
+                        action = int(action)
+                    action_distributions[agent_id].append(action)
+                    all_actions.append(action)
             else:
                 total_reward += rewards
 
