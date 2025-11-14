@@ -181,11 +181,35 @@ class Magent2ParallelBase(AgentParrelEnv):
                 f"原始错误: {str(e)}"
             ) from e
 
+        # 更新活跃Agent列表（MAgent2环境会在step后更新agents列表）
+        # 如果observations为空，说明所有agents都已死亡，agents列表应该为空
+        if not observations:
+            # 更新agents列表为空（所有agents都已死亡）
+            self._agents = []
+        else:
+            # 更新agents列表为observations中的agents（存活的agents）
+            self._agents = list(getattr(self._env, "agents", self._agents))
+            # 确保agents列表与observations同步
+            obs_agents = set(observations.keys())
+            env_agents = set(getattr(self._env, "agents", []))
+            # 如果observations中的agents与环境的agents不一致，以observations为准
+            if obs_agents != env_agents:
+                # 使用observations中的agents作为活跃agents
+                self._agents = list(obs_agents)
+        
         # 合并terminations和truncations为dones
-        dones = {
-            aid: bool(terminations.get(aid, False) or truncations.get(aid, False))
-            for aid in self.agents
-        }
+        # 只处理observations中存在的agents（存活的agents）
+        if observations:
+            dones = {
+                aid: bool(terminations.get(aid, False) or truncations.get(aid, False))
+                for aid in observations.keys()
+            }
+        else:
+            # 如果observations为空，所有agents都已死亡
+            dones = {aid: True for aid in self._agents if aid in terminations or aid in truncations}
+            # 如果没有terminations或truncations，创建一个空的dones字典
+            if not dones:
+                dones = {}
         
         # 缓存当前观测
         self._current_observations = observations

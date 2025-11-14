@@ -202,16 +202,30 @@ class RolloutCollector:
                 print(f"  选择动作中... (step {step})", end='\r', flush=True)
             
             # 验证obs不为空
+            # 注意：如果obs为空，说明所有agents都已死亡，episode应该结束
+            # 但这种情况应该在循环开始时就被检测到（从reset()返回的obs不应该为空）
+            # 如果obs为空，可能是环境状态异常
             if not obs:
-                # 如果obs为空，说明所有agents都已死亡，episode应该结束
-                # 但为了安全，我们检查一下环境状态
+                # 检查环境状态
                 env_agents = getattr(self.env, 'agents', None)
-                raise ValueError(
-                    f"观测字典为空，但环境可能仍有活跃agents。\n"
-                    f"环境agents: {env_agents}\n"
-                    f"step: {step}\n"
-                    f"这可能表示环境状态异常。"
-                )
+                
+                # 如果这是第一步（step == 0），obs来自reset()，不应该为空
+                if step == 0:
+                    raise ValueError(
+                        f"环境reset()返回了空的观测字典。\n"
+                        f"环境agents: {env_agents}\n"
+                        f"这可能表示环境初始化失败。"
+                    )
+                else:
+                    # 如果不是第一步，obs来自上一次的next_obs
+                    # 如果next_obs为空，应该在处理next_obs时已经处理了
+                    # 这里不应该出现，但如果出现了，说明逻辑有问题
+                    raise ValueError(
+                        f"观测字典为空（来自上一次的next_obs）。\n"
+                        f"环境agents: {env_agents}\n"
+                        f"step: {step}\n"
+                        f"这可能表示上一次循环中next_obs为空但没有正确处理。"
+                    )
             
             # 以obs为准：只处理obs中存在的agents（存活的agents）
             # 环境的agents列表可能包含已死亡的agents，但obs只包含存活的agents
@@ -325,6 +339,27 @@ class RolloutCollector:
                     f"原始错误: {str(e)}"
                 ) from e
 
+            # 检查next_obs是否为空
+            # 如果next_obs为空，说明所有agents都已死亡，episode应该结束
+            # 这是正常情况：在对抗环境中，所有agents死亡时observations会为空
+            if not next_obs:
+                # 所有agents都已死亡，episode正常结束
+                # 存储最后一步的数据
+                for agent_id in agent_ids:
+                    if agent_id in obs:
+                        action, logprob, value = actions_dict[agent_id]
+                        all_obs[agent_id].append(obs[agent_id])
+                        all_actions[agent_id].append(action)
+                        all_rewards[agent_id].append(rewards.get(agent_id, 0.0) if isinstance(rewards, dict) else rewards)
+                        all_next_obs[agent_id].append(obs[agent_id])  # 使用当前obs作为next_obs
+                        all_dones[agent_id].append(True)
+                        all_logprobs[agent_id].append(logprob)
+                        all_values[agent_id].append(value)
+                
+                # episode结束
+                done = True
+                break
+
             # 存储数据
             for agent_id in agent_ids:
                 if agent_id in obs:
@@ -332,9 +367,9 @@ class RolloutCollector:
 
                     all_obs[agent_id].append(obs[agent_id])
                     all_actions[agent_id].append(action)
-                    all_rewards[agent_id].append(rewards.get(agent_id, 0.0))
+                    all_rewards[agent_id].append(rewards.get(agent_id, 0.0) if isinstance(rewards, dict) else rewards)
                     all_next_obs[agent_id].append(next_obs.get(agent_id, obs[agent_id]))
-                    all_dones[agent_id].append(dones.get(agent_id, False))
+                    all_dones[agent_id].append(dones.get(agent_id, False) if isinstance(dones, dict) else dones)
                     all_logprobs[agent_id].append(logprob)
                     all_values[agent_id].append(value)
 
