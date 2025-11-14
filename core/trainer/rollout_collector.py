@@ -213,17 +213,69 @@ class RolloutCollector:
                 print()  # 换行
 
             # 从actions_dict中提取动作值（环境期望的是{agent_id: action}，而不是{agent_id: (action, logprob, value)}）
+            # 获取当前环境的活跃agent列表（避免传递已死亡agent的动作）
+            active_agents = getattr(self.env, 'agents', None)
+            if active_agents is None:
+                # 如果没有agents属性，尝试从obs中获取
+                active_agents = list(obs.keys())
+            
             env_actions = {}
             for agent_id, action_data in actions_dict.items():
+                # 只包含活跃的agent
+                if agent_id not in active_agents:
+                    continue
+                
+                # 提取动作值
                 if isinstance(action_data, tuple):
                     # 如果是元组格式 (action, logprob, value)，提取action
-                    env_actions[agent_id] = action_data[0]
+                    action = action_data[0]
                 else:
                     # 如果已经是简单动作值，直接使用
-                    env_actions[agent_id] = action_data
+                    action = action_data
+                
+                # 验证和转换动作
+                # 确保动作是整数类型
+                if isinstance(action, np.ndarray):
+                    action = int(action.item() if hasattr(action, 'item') else action)
+                elif hasattr(action, 'item'):  # 处理torch.Tensor等类型
+                    action = int(action.item())
+                else:
+                    action = int(action)
+                
+                # 验证动作值在有效范围内（0 到 action_dim-1）
+                # 注意：这里假设action_dim可以通过环境获取，如果不行则跳过验证
+                action_dim = getattr(self.env, 'action_space', None)
+                if action_dim is not None:
+                    if hasattr(action_dim, 'n'):
+                        max_action = action_dim.n - 1
+                    elif isinstance(action_dim, dict) and agent_id in action_dim:
+                        max_action = action_dim[agent_id].n - 1 if hasattr(action_dim[agent_id], 'n') else 20
+                    else:
+                        max_action = 20  # 默认MAgent2 battle_v4的动作空间是21（0-20）
+                else:
+                    max_action = 20  # 默认值
+                
+                # 裁剪动作到有效范围
+                action = max(0, min(action, max_action))
+                
+                env_actions[agent_id] = action
+
+            # 验证env_actions不为空
+            if not env_actions:
+                raise ValueError(f"没有有效的动作传递给环境。活跃agents: {active_agents}, actions_dict keys: {list(actions_dict.keys())}")
 
             # 环境步进
-            next_obs, rewards, dones, info = self.env.step(env_actions)
+            try:
+                next_obs, rewards, dones, info = self.env.step(env_actions)
+            except Exception as e:
+                # 添加详细的错误信息
+                raise RuntimeError(
+                    f"环境步进失败。\n"
+                    f"活跃agents: {active_agents}\n"
+                    f"env_actions keys: {list(env_actions.keys())}\n"
+                    f"env_actions values: {list(env_actions.values())}\n"
+                    f"原始错误: {str(e)}"
+                ) from e
 
             # 存储数据
             for agent_id in agent_ids:

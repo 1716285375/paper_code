@@ -129,7 +129,57 @@ class Magent2ParallelBase(AgentParrelEnv):
                 - dones: 结束标志 {agent_id: done}
                 - infos: 额外信息 {agent_id: info}
         """
-        observations, rewards, terminations, truncations, infos = self._env.step(actions)
+        # 验证和清理动作字典
+        # 只包含当前活跃的agent
+        active_agents = list(getattr(self._env, "agents", self._agents))
+        filtered_actions = {}
+        
+        for agent_id, action in actions.items():
+            # 只包含活跃的agent
+            if agent_id not in active_agents:
+                continue
+            
+            # 确保动作是整数类型
+            if not isinstance(action, int):
+                try:
+                    action = int(action)
+                except (ValueError, TypeError):
+                    raise ValueError(f"Agent {agent_id} 的动作值无法转换为整数: {action}")
+            
+            # 验证动作值在有效范围内（0-20 for MAgent2 battle_v4）
+            # 获取动作空间大小
+            action_space = getattr(self._env, "action_space", None)
+            if action_space is not None:
+                if isinstance(action_space, dict) and agent_id in action_space:
+                    max_action = action_space[agent_id].n - 1 if hasattr(action_space[agent_id], 'n') else 20
+                elif hasattr(action_space, 'n'):
+                    max_action = action_space.n - 1
+                else:
+                    max_action = 20  # 默认值
+            else:
+                max_action = 20  # 默认MAgent2 battle_v4的动作空间是21（0-20）
+            
+            # 裁剪动作到有效范围
+            action = max(0, min(action, max_action))
+            filtered_actions[agent_id] = action
+        
+        # 如果没有有效动作，使用默认动作（do_nothing = 0）
+        if not filtered_actions:
+            # 为所有活跃agent提供默认动作
+            filtered_actions = {aid: 0 for aid in active_agents}
+        
+        try:
+            observations, rewards, terminations, truncations, infos = self._env.step(filtered_actions)
+        except Exception as e:
+            # 添加详细的错误信息
+            raise RuntimeError(
+                f"MAgent2环境步进失败。\n"
+                f"活跃agents: {active_agents}\n"
+                f"输入actions keys: {list(actions.keys())}\n"
+                f"过滤后actions keys: {list(filtered_actions.keys())}\n"
+                f"过滤后actions values: {list(filtered_actions.values())}\n"
+                f"原始错误: {str(e)}"
+            ) from e
 
         # 合并terminations和truncations为dones
         dones = {
