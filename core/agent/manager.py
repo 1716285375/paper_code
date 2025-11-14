@@ -153,13 +153,28 @@ class AgentManager:
                     else:
                         # 顺序处理（但至少是同一个agent实例，forward pass会更快）
                         for agent_id, obs in agent_obs_list:
+                            try:
+                                action, logprob, value = agent.act(obs, deterministic=deterministic)
+                                results[agent_id] = (action, logprob, value)
+                            except Exception as e:
+                                # 如果某个agent的act()失败，记录错误但继续处理其他agents
+                                import traceback
+                                print(f"警告: agent {agent_id} 的动作选择失败: {str(e)}", flush=True)
+                                if show_progress:
+                                    print(f"  错误详情: {traceback.format_exc()}", flush=True)
+                                # 不添加该agent到results，让调用者知道该agent处理失败
+                except Exception as e:
+                    # 如果批量处理失败，回退到顺序处理
+                    import traceback
+                    print(f"警告: 批量处理失败，回退到顺序处理: {str(e)}", flush=True)
+                    for agent_id, obs in agent_obs_list:
+                        try:
                             action, logprob, value = agent.act(obs, deterministic=deterministic)
                             results[agent_id] = (action, logprob, value)
-                except Exception:
-                    # 如果批量处理失败，回退到顺序处理
-                    for agent_id, obs in agent_obs_list:
-                        action, logprob, value = agent.act(obs, deterministic=deterministic)
-                        results[agent_id] = (action, logprob, value)
+                        except Exception as e2:
+                            # 如果顺序处理也失败，记录错误但继续处理其他agents
+                            print(f"警告: agent {agent_id} 的动作选择失败: {str(e2)}", flush=True)
+                            # 不添加该agent到results
                 
                 processed += len(agent_obs_list)
                 if show_progress:
@@ -171,9 +186,17 @@ class AgentManager:
             # 没有共享策略，顺序处理每个agent
             progress_freq = max(10, num_agents // 20)
             for idx, (agent_id, obs) in enumerate(observations.items()):
-                agent = self.get_agent(agent_id)
-                action, logprob, value = agent.act(obs, deterministic=deterministic)
-                results[agent_id] = (action, logprob, value)
+                try:
+                    agent = self.get_agent(agent_id)
+                    action, logprob, value = agent.act(obs, deterministic=deterministic)
+                    results[agent_id] = (action, logprob, value)
+                except Exception as e:
+                    # 如果某个agent的act()失败，记录错误但继续处理其他agents
+                    import traceback
+                    print(f"警告: agent {agent_id} 的动作选择失败: {str(e)}", flush=True)
+                    if show_progress:
+                        print(f"  错误详情: {traceback.format_exc()}", flush=True)
+                    # 不添加该agent到results，让调用者知道该agent处理失败
                 
                 if show_progress and (idx + 1) % progress_freq == 0:
                     print(f"  动作选择进度: {idx + 1}/{num_agents} agents", end='\r', flush=True)

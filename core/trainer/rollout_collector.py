@@ -201,6 +201,23 @@ class RolloutCollector:
             elif show_progress:
                 print(f"  选择动作中... (step {step})", end='\r', flush=True)
             
+            # 验证obs不为空
+            if not obs:
+                # 如果obs为空，说明所有agents都已死亡，episode应该结束
+                # 但为了安全，我们检查一下环境状态
+                env_agents = getattr(self.env, 'agents', None)
+                raise ValueError(
+                    f"观测字典为空，但环境可能仍有活跃agents。\n"
+                    f"环境agents: {env_agents}\n"
+                    f"step: {step}\n"
+                    f"这可能表示环境状态异常。"
+                )
+            
+            # 以obs为准：只处理obs中存在的agents（存活的agents）
+            # 环境的agents列表可能包含已死亡的agents，但obs只包含存活的agents
+            alive_agents = list(obs.keys())
+            
+            # 调用agent.act()为所有存活的agents生成动作
             actions_dict = self.agent.act(
                 obs,
                 deterministic=False,
@@ -212,18 +229,45 @@ class RolloutCollector:
             elif show_progress:
                 print()  # 换行
 
-            # 从actions_dict中提取动作值（环境期望的是{agent_id: action}，而不是{agent_id: (action, logprob, value)}）
-            # 获取当前环境的活跃agent列表（避免传递已死亡agent的动作）
-            active_agents = getattr(self.env, 'agents', None)
-            if active_agents is None:
-                # 如果没有agents属性，尝试从obs中获取
-                active_agents = list(obs.keys())
+            # 验证actions_dict不为空
+            # 注意：如果obs中有存活的agents，agent.act()应该为所有存活的agents生成动作
+            # 如果actions_dict为空，说明agent.act()内部出现了严重错误
+            if not actions_dict:
+                raise RuntimeError(
+                    f"agent.act()返回了空字典，但存在存活的agents。\n"
+                    f"存活的agents (obs keys): {alive_agents}\n"
+                    f"obs数量: {len(obs)}\n"
+                    f"step: {step}\n"
+                    f"这表示agent.act()内部出现了错误，可能原因：\n"
+                    f"  1. 所有agents的act()方法都抛出了异常\n"
+                    f"  2. AgentManager内部处理逻辑出错\n"
+                    f"  3. 网络前向传播失败\n"
+                    f"请检查agent.act()的实现和日志。"
+                )
             
+            # 验证actions_dict包含所有存活agents的动作
+            # 注意：如果obs中有某个agent，agent.act()应该为该agent生成动作
+            # 如果缺少某些agents的动作，说明agent.act()内部处理不完整
+            missing_actions = [aid for aid in alive_agents if aid not in actions_dict]
+            if missing_actions:
+                raise RuntimeError(
+                    f"agent.act()没有为所有存活的agents生成动作。\n"
+                    f"存活的agents: {alive_agents}\n"
+                    f"缺少动作的agents: {missing_actions}\n"
+                    f"actions_dict keys: {list(actions_dict.keys())}\n"
+                    f"step: {step}\n"
+                    f"这表示agent.act()内部处理不完整，可能原因：\n"
+                    f"  1. 某些agents的act()方法抛出了异常但被静默捕获\n"
+                    f"  2. AgentManager的批量处理逻辑出错\n"
+                    f"  3. 某些agents的观测格式不正确导致处理失败\n"
+                    f"请检查AgentManager.act()的实现和异常处理逻辑。"
+                )
+
+            # 从actions_dict中提取动作值（环境期望的是{agent_id: action}，而不是{agent_id: (action, logprob, value)}）
+            # 只处理存活的agents（obs中的agents）
             env_actions = {}
-            for agent_id, action_data in actions_dict.items():
-                # 只包含活跃的agent
-                if agent_id not in active_agents:
-                    continue
+            for agent_id in alive_agents:
+                action_data = actions_dict[agent_id]
                 
                 # 提取动作值
                 if isinstance(action_data, tuple):
@@ -243,7 +287,6 @@ class RolloutCollector:
                     action = int(action)
                 
                 # 验证动作值在有效范围内（0 到 action_dim-1）
-                # 注意：这里假设action_dim可以通过环境获取，如果不行则跳过验证
                 action_dim = getattr(self.env, 'action_space', None)
                 if action_dim is not None:
                     if hasattr(action_dim, 'n'):
@@ -262,7 +305,12 @@ class RolloutCollector:
 
             # 验证env_actions不为空
             if not env_actions:
-                raise ValueError(f"没有有效的动作传递给环境。活跃agents: {active_agents}, actions_dict keys: {list(actions_dict.keys())}")
+                raise ValueError(
+                    f"没有有效的动作传递给环境。\n"
+                    f"存活的agents (obs keys): {alive_agents}\n"
+                    f"actions_dict keys: {list(actions_dict.keys())}\n"
+                    f"step: {step}"
+                )
 
             # 环境步进
             try:
@@ -271,7 +319,7 @@ class RolloutCollector:
                 # 添加详细的错误信息
                 raise RuntimeError(
                     f"环境步进失败。\n"
-                    f"活跃agents: {active_agents}\n"
+                    f"存活的agents: {alive_agents}\n"
                     f"env_actions keys: {list(env_actions.keys())}\n"
                     f"env_actions values: {list(env_actions.values())}\n"
                     f"原始错误: {str(e)}"
