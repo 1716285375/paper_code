@@ -29,6 +29,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+from easydict import EasyDict
 
 # 添加项目根目录到路径
 project_root = Path(__file__).parent.parent
@@ -139,19 +140,21 @@ def create_agent_manager(
     agent_ids: list,
     obs_dim: int,
     action_dim: int,
-    config: dict,
+    config,
     device: str,
     red_agents: list,
     blue_agents: list,
     algorithm: str = "ppo",
 ) -> AgentManager:
     """创建Agent管理器"""
-    agent_config = config.get("agent", {})
+    agent_config = getattr(config, "agent", EasyDict())
     
     # SMPE需要特殊处理
     if algorithm.lower() == "smpe":
-        agent_config.setdefault("agent_id_dim", 32)
-        agent_config.setdefault("n_agents", len(agent_ids))
+        if not hasattr(agent_config, "agent_id_dim"):
+            agent_config.agent_id_dim = 32
+        if not hasattr(agent_config, "n_agents"):
+            agent_config.n_agents = len(agent_ids)
     
     agent_manager = AgentManager(
         agent_ids=agent_ids,
@@ -214,13 +217,13 @@ def main():
     
     # 覆盖设备配置
     device = setup_gpu(args.gpu)
-    config["device"] = device
+    config.device = device
     
     # 覆盖随机种子
     if args.seed is not None:
-        config["seed"] = args.seed
+        config.seed = args.seed
     
-    seed = config.get("seed", 42)
+    seed = getattr(config, "seed", 42)
     setup_seed(seed)
     
     print("=" * 80)
@@ -233,10 +236,10 @@ def main():
     print("=" * 80)
     
     # 创建环境
-    env_config = config.get("env", {})
-    env_name = env_config.get("name") or env_config.get("id", "magent2:battle_v4")
-    env_kwargs = env_config.get("kwargs", {})
-    if "name" in env_config:
+    env_config = getattr(config, "env", EasyDict())
+    env_name = getattr(env_config, "name", None) or getattr(env_config, "id", "magent2:battle_v4")
+    env_kwargs = getattr(env_config, "kwargs", EasyDict())
+    if hasattr(env_config, "name"):
         env_kwargs.update({k: v for k, v in env_config.items() if k != "name"})
     
     print(f"\n创建环境: {env_name}")
@@ -289,14 +292,17 @@ def main():
         print(f"状态维度（估算）: {state_dim}")
     
     # 更新Agent配置
-    agent_config = config.get("agent", {})
-    agent_config.setdefault("obs_dim", obs_dim)
-    agent_config.setdefault("action_dim", action_dim)
+    agent_config = getattr(config, "agent", EasyDict())
+    if not hasattr(agent_config, "obs_dim"):
+        agent_config.obs_dim = obs_dim
+    if not hasattr(agent_config, "action_dim"):
+        agent_config.action_dim = action_dim
     
     # 如果使用集中式Critic，更新state_dim
-    if config.get("training", {}).get("use_centralized_critic", False):
-        if "centralized_critic" in agent_config:
-            agent_config["centralized_critic"]["state_dim"] = state_dim
+    training_config = getattr(config, "training", EasyDict())
+    if getattr(training_config, "use_centralized_critic", False):
+        if hasattr(agent_config, "centralized_critic"):
+            agent_config.centralized_critic.state_dim = state_dim
     
     # 创建Agent管理器
     agent_manager = create_agent_manager(
@@ -315,7 +321,7 @@ def main():
     
     # 创建训练器
     TrainerClass = TRAINER_CLASS_MAP[args.algorithm]
-    training_config = config.get("training", {})
+    training_config = getattr(config, "training", EasyDict())
     
     # 创建日志记录器
     logger = LoggerManager(
@@ -328,20 +334,20 @@ def main():
     # 创建实验跟踪器
     tracker = None
     if not args.no_track:
-        tracking_config = config.get("tracking", {})
-        if tracking_config.get("enabled", True):
-            experiment_name = tracking_config.get("name") or f"{args.algorithm}_a5000_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        tracking_config = getattr(config, "tracking", EasyDict())
+        if getattr(tracking_config, "enabled", True):
+            experiment_name = getattr(tracking_config, "name", None) or f"{args.algorithm}_a5000_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
             
             trackers_list = []
             
             # WandB
-            if tracking_config.get("wandb", {}).get("enabled", False):
+            wandb_config = getattr(tracking_config, "wandb", EasyDict())
+            if getattr(wandb_config, "enabled", False):
                 try:
-                    wandb_config = tracking_config.get("wandb", {})
                     wandb_tracker = WandBTracker()
                     wandb_tracker.init(
-                        project=wandb_config.get("project", "marl-a5000"),
-                        name=wandb_config.get("name") or experiment_name,
+                        project=getattr(wandb_config, "project", "marl-a5000"),
+                        name=getattr(wandb_config, "name", None) or experiment_name,
                         config=config,
                     )
                     trackers_list.append(wandb_tracker)
@@ -350,12 +356,12 @@ def main():
                     print(f"⚠ WandB初始化失败: {e}")
             
             # TensorBoard
-            if tracking_config.get("tensorboard", {}).get("enabled", True):
+            tb_config = getattr(tracking_config, "tensorboard", EasyDict())
+            if getattr(tb_config, "enabled", True):
                 try:
-                    tb_config = tracking_config.get("tensorboard", {})
                     tb_tracker = TensorBoardTracker(log_dir="runs")
                     tb_tracker.init(
-                        project=tb_config.get("experiment_name", experiment_name),
+                        project=getattr(tb_config, "experiment_name", experiment_name),
                         name=experiment_name,
                         config=config,
                     )
@@ -372,15 +378,15 @@ def main():
     
     # 创建数据管理器
     data_manager = None
-    data_saving_config = config.get("data_saving", {})
-    if data_saving_config.get("enabled", False):
-        output_dir = data_saving_config.get("output_dir", "training_data")
+    data_saving_config = getattr(config, "data_saving", EasyDict())
+    if getattr(data_saving_config, "enabled", False):
+        output_dir = getattr(data_saving_config, "output_dir", "training_data")
         # 创建带时间戳的子目录
         experiment_name = f"{args.algorithm}_a5000_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         full_output_dir = Path(output_dir) / experiment_name
         data_manager = TrainingDataManager(
             output_dir=str(full_output_dir),
-            save_format=data_saving_config.get("format", "both"),
+            save_format=getattr(data_saving_config, "format", "both"),
         )
         print(f"✓ 数据保存已启用: {full_output_dir}")
     
@@ -406,7 +412,7 @@ def main():
     check_memory(device)
     
     # 开始训练
-    num_updates = training_config.get("num_updates", 1000)
+    num_updates = getattr(training_config, "num_updates", 1000)
     print(f"\n开始训练: {num_updates}个更新")
     print("=" * 80)
     
@@ -416,7 +422,7 @@ def main():
     except KeyboardInterrupt:
         print("\n训练被用户中断")
         # 保存checkpoint
-        checkpoint_dir = training_config.get("checkpoint_dir", "checkpoints")
+        checkpoint_dir = getattr(training_config, "checkpoint_dir", "checkpoints")
         checkpoint_path = f"{checkpoint_dir}/{args.algorithm}_a5000_interrupted.pt"
         trainer.save(checkpoint_path)
         print(f"已保存中断checkpoint: {checkpoint_path}")
@@ -425,7 +431,7 @@ def main():
         import traceback
         traceback.print_exc()
         # 保存checkpoint
-        checkpoint_dir = training_config.get("checkpoint_dir", "checkpoints")
+        checkpoint_dir = getattr(training_config, "checkpoint_dir", "checkpoints")
         checkpoint_path = f"{checkpoint_dir}/{args.algorithm}_a5000_error.pt"
         try:
             trainer.save(checkpoint_path)

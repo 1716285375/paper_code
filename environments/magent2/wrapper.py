@@ -106,7 +106,14 @@ class Magent2ParallelBase(AgentParrelEnv):
             observation = result
 
         # 更新活跃Agent列表
-        self._agents = list(getattr(self._env, "agents", self._agents))
+        env_agents = list(getattr(self._env, "agents", []))
+        
+        # 如果环境的agents列表为空，尝试从observation中获取
+        if not env_agents and isinstance(observation, dict):
+            env_agents = list(observation.keys())
+        
+        # 更新内部agents列表
+        self._agents = env_agents
         
         # 缓存当前观测
         self._current_observations = observation
@@ -132,6 +139,15 @@ class Magent2ParallelBase(AgentParrelEnv):
         # 验证和清理动作字典
         # 只包含当前活跃的agent
         active_agents = list(getattr(self._env, "agents", self._agents))
+        
+        # 如果active_agents为空，尝试从输入的动作字典中推断活跃agents
+        # 这通常发生在环境重置后但agents列表还没有更新的情况
+        if not active_agents and actions:
+            # 使用输入动作字典的keys作为活跃agents
+            active_agents = list(actions.keys())
+            # 同时更新内部的agents列表
+            self._agents = active_agents
+        
         filtered_actions = {}
         
         for agent_id, action in actions.items():
