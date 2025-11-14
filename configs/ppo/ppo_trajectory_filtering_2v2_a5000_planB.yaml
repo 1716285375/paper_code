@@ -1,0 +1,121 @@
+# PPO with Trajectory Filtering - 2v2环境 A5000 GPU优化版本
+# 方案B：激进优化（推荐用于长期训练）
+# 基于分析报告的激进优化方案，进行全面改进
+# Trajectory-Filtering PPO for Multi-Agent Policy Transfer
+
+# 环境配置（2v2优化）
+env:
+  name: "magent2:battle_v4"
+  map_size: 12  # 2v2环境使用12x12地图
+  minimap_mode: false
+  max_cycles: 300  # 2v2环境可以支持更长的episode（充分利用显存）
+  step_reward: 0.0  # 【方案B修改】从-0.005移除到0.0，移除每步惩罚，鼓励积极行动
+  dead_penalty: -0.1
+  attack_penalty: -0.1
+  attack_opponent_reward: 1.0  # 【方案B修改】从0.2增加到1.0，大幅增加攻击奖励，鼓励积极战斗
+
+# Agent配置（针对2v2优化的大网络）
+agent:
+  type: "ppo"
+  obs_dim: 845  # Magent2观测维度（与map_size无关，保持845）
+  action_dim: 21  # Magent2动作维度
+  
+  encoder:
+    type: "networks/mlp"
+    params:
+      in_dim: 845
+      hidden_dims: [512, 512, 256]  # 【方案B修改】从[512, 256, 128]增加到[512, 512, 256]，增加网络容量和深度
+      use_layer_norm: true
+      dropout: 0.0
+  
+  policy_head:
+    type: "policy_heads/discrete"
+    params:
+      hidden_dims: [128]  # 较大的策略头
+  
+  value_head:
+    type: "value_heads/mlp"
+    params:
+      hidden_dims: [256, 128]  # 【方案B修改】从[128]增加到[256, 128]，增加价值函数容量
+  
+  optimizer:
+    type: "optimizers/adam"
+    params:
+      lr: 3e-4
+      scheduler: "cosine"  # 【方案B修改】从"linear"改为"cosine"，使用cosine学习率调度，更平滑的衰减
+      warmup_steps: 2000
+      total_steps: 200000
+      weight_decay: 0.0
+      max_grad_norm: 0.5
+
+# 训练配置（2v2优化）
+training:
+  num_updates: 10000  # 2v2环境训练更快，可以更多更新次数
+  max_steps_per_episode: 300  # 与max_cycles一致，充分利用episode长度
+  num_epochs: 3  # 【方案B修改】从5减少到3，减少训练轮数，提高样本效率
+  batch_size: 2560  # 【方案B修改】从5120减半到2560，提高样本效率，减少过拟合
+  clip_coef: 0.2
+  value_coef: 0.5
+  entropy_coef: 0.1  # 【方案B修改】从0.01增加到0.1，10倍增加，大幅维持探索防止过早收敛
+  gamma: 0.99
+  gae_lambda: 0.95
+  vf_clip_param: 10.0  # 价值函数裁剪
+  
+  # 轨迹过滤配置（核心功能）
+  use_trajectory_filter: true
+  filter_strategy: "mixed"  # 混合策略：优势(50%) + 奖励(30%) + 多样性(20%)
+  filter_ratio: 0.3  # 【方案B修改】从0.75降低到0.3，更保守的过滤，保留更多训练数据
+  reweight_enabled: true  # 启用重加权
+  reweight_scheme: "linear"  # 线性权重方案
+  # segment_length: null  # 可选：轨迹分段长度（2v2环境通常不需要）
+  
+  # 自博弈配置（2v2优化）
+  self_play_update_freq: 10  # 【方案B修改】从5增加到10，减少对手更新频率，提供更稳定的学习环境
+  self_play_mode: "pool"  # 使用策略池
+  use_policy_pool: true
+  policy_pool_size: 50  # 2v2环境可以支持更大的策略池（充分利用显存）
+  opponent_pool_strategy: "pfsp"  # PFSP采样策略
+  
+  # 主团队和对手团队（2v2环境）
+  main_team: "team_red"
+  opponent_team: "team_blue"
+  
+  # 评估和保存
+  eval_freq: 50  # 每50个更新评估一次
+  save_freq: 100  # 每100个更新保存一次
+  log_freq: 10  # 每10个更新记录日志
+  
+  checkpoint_dir: "checkpoints/ppo_tf_2v2_a5000_planB"
+
+# 设备配置
+device: "cuda"  # 将根据--gpu参数覆盖
+
+# 随机种子
+seed: 42
+
+# 实验跟踪配置
+tracking:
+  enabled: true
+  
+  # WandB配置
+  wandb:
+    enabled: true
+    project: "marl-trajectory-filtering-2v2-planB"
+    name: null  # 自动生成
+  
+  # TensorBoard配置
+  tensorboard:
+    enabled: true
+    experiment_name: "ppo_tf_2v2_a5000_planB"
+
+# 训练数据保存配置
+data_saving:
+  enabled: true
+  output_dir: "training_data/ppo_tf_2v2_a5000_planB"
+  format: "both"  # json和csv
+  
+  # 视频录制配置
+  record_video:
+    enabled: false  # 评估时录制视频（可选）
+    fps: 30
+

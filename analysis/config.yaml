@@ -1,0 +1,152 @@
+_wandb:
+    value:
+        cli_version: 0.23.0
+        e:
+            r5tnxonsvtjpztpaostwjpr1bnq7aczp:
+                args:
+                    - --algorithm
+                    - ppo
+                    - --config
+                    - configs/ppo/ppo_trajectory_filtering_2v2_a5000.yaml
+                codePath: examples\train_a5000.py
+                codePathLocal: examples\train_a5000.py
+                cpu_count: 14
+                cpu_count_logical: 28
+                cudaVersion: "12.6"
+                disk:
+                    /:
+                        total: "2000397791232"
+                        used: "40084320256"
+                email: statehvu@gmail.com
+                executable: C:\Users\Administrator\.conda\envs\zz\python.exe
+                git:
+                    commit: 1c32e1366626136752aaa282c6e1cb32c51023d2
+                    remote: https://github.com/1716285375/paper_code.git
+                gpu: NVIDIA RTX A5000
+                gpu_count: 1
+                gpu_nvidia:
+                    - architecture: Ampere
+                      cudaCores: 8192
+                      memoryTotal: "25757220864"
+                      name: NVIDIA RTX A5000
+                      uuid: GPU-3a91796d-fb4c-09c4-0861-c01ba2128655
+                host: DESKTOP-2
+                memory:
+                    total: "68349857792"
+                os: Windows-10-10.0.26100-SP0
+                program: .\examples\train_a5000.py
+                python: CPython 3.8.20
+                root: D:\wsp\zz\paper_code
+                startedAt: "2025-11-13T23:28:38.286565Z"
+                writerId: r5tnxonsvtjpztpaostwjpr1bnq7aczp
+        m: []
+        python_version: 3.8.20
+        t:
+            "1":
+                - 1
+            "2":
+                - 1
+            "3":
+                - 13
+                - 16
+                - 61
+            "4": 3.8.20
+            "5": 0.23.0
+            "8":
+                - 3
+            "12": 0.23.0
+            "13": windows-amd64
+agent:
+    value:
+        action_dim: 21
+        encoder:
+            params:
+                dropout: 0
+                hidden_dims:
+                    - 512
+                    - 256
+                    - 128
+                in_dim: 845
+                use_layer_norm: true
+            type: networks/mlp
+        obs_dim: 845
+        optimizer:
+            params:
+                lr: "3e-4"
+                max_grad_norm: 0.5
+                scheduler: linear
+                total_steps: 200000
+                warmup_steps: 2000
+                weight_decay: 0
+            type: optimizers/adam
+        policy_head:
+            params:
+                hidden_dims:
+                    - 128
+            type: policy_heads/discrete
+        type: ppo
+        value_head:
+            params:
+                hidden_dims:
+                    - 128
+            type: value_heads/mlp
+data_saving:
+    value:
+        enabled: true
+        format: both
+        output_dir: training_data/ppo_tf_2v2_a5000
+        record_video:
+            enabled: false
+            fps: 30
+device:
+    value: cuda:0
+env:
+    value:
+        attack_opponent_reward: 0.2
+        attack_penalty: -0.1
+        dead_penalty: -0.1
+        map_size: 12
+        max_cycles: 300
+        minimap_mode: false
+        name: magent2:battle_v4
+        step_reward: -0.005
+seed:
+    value: 42
+tracking:
+    value:
+        enabled: true
+        tensorboard:
+            enabled: true
+            experiment_name: ppo_tf_2v2_a5000
+        wandb:
+            enabled: true
+            name: null
+            project: marl-trajectory-filtering-2v2
+training:
+    value:
+        batch_size: 5120
+        checkpoint_dir: checkpoints/ppo_tf_2v2_a5000
+        clip_coef: 0.2
+        entropy_coef: 0.01
+        eval_freq: 50
+        filter_ratio: 0.75
+        filter_strategy: mixed
+        gae_lambda: 0.95
+        gamma: 0.99
+        log_freq: 10
+        main_team: team_red
+        max_steps_per_episode: 300
+        num_epochs: 5
+        num_updates: 10000
+        opponent_pool_strategy: pfsp
+        opponent_team: team_blue
+        policy_pool_size: 50
+        reweight_enabled: true
+        reweight_scheme: linear
+        save_freq: 100
+        self_play_mode: pool
+        self_play_update_freq: 5
+        use_policy_pool: true
+        use_trajectory_filter: true
+        value_coef: 0.5
+        vf_clip_param: 10
