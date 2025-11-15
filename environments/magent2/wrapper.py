@@ -182,12 +182,60 @@ class Magent2ParallelBase(AgentParrelEnv):
         # 如果没有有效动作，使用默认动作（do_nothing = 0）
         if not filtered_actions:
             # 为所有活跃agent提供默认动作
-            filtered_actions = {aid: 0 for aid in active_agents}
+            if active_agents:
+                filtered_actions = {aid: 0 for aid in active_agents}
+            else:
+                # 如果active_agents也为空，说明环境可能已经结束
+                # 返回空的观测和奖励，表示episode已结束
+                return {}, {}, {"__all__": True}, {}
+        
+        # 检查环境是否已经结束（通过检查是否有活跃agents）
+        if not active_agents:
+            # 环境已经结束，返回空的观测和奖励
+            return {}, {}, {"__all__": True}, {}
         
         try:
             observations, rewards, terminations, truncations, infos = self._env.step(filtered_actions)
+        except (OSError, RuntimeError) as e:
+            # 访问违规或其他运行时错误
+            # 这通常表示环境状态损坏或episode已结束
+            error_msg = str(e)
+            if "access violation" in error_msg.lower() or "exception" in error_msg.lower():
+                # 环境状态损坏，尝试重置环境
+                try:
+                    # 记录警告但不抛出异常，返回episode结束标志
+                    import warnings
+                    warnings.warn(
+                        f"MAgent2环境访问违规，episode可能已结束。\n"
+                        f"活跃agents: {active_agents}\n"
+                        f"过滤后actions: {filtered_actions}\n"
+                        f"将返回episode结束标志。"
+                    )
+                    # 返回episode结束标志
+                    return {}, {}, {"__all__": True}, {}
+                except Exception:
+                    # 如果重置也失败，抛出原始错误
+                    raise RuntimeError(
+                        f"MAgent2环境步进失败（访问违规）。\n"
+                        f"活跃agents: {active_agents}\n"
+                        f"输入actions keys: {list(actions.keys())}\n"
+                        f"过滤后actions keys: {list(filtered_actions.keys())}\n"
+                        f"过滤后actions values: {list(filtered_actions.values())}\n"
+                        f"原始错误: {error_msg}\n"
+                        f"建议：检查环境是否已结束，或重置环境。"
+                    ) from e
+            else:
+                # 其他类型的错误，直接抛出
+                raise RuntimeError(
+                    f"MAgent2环境步进失败。\n"
+                    f"活跃agents: {active_agents}\n"
+                    f"输入actions keys: {list(actions.keys())}\n"
+                    f"过滤后actions keys: {list(filtered_actions.keys())}\n"
+                    f"过滤后actions values: {list(filtered_actions.values())}\n"
+                    f"原始错误: {error_msg}"
+                ) from e
         except Exception as e:
-            # 添加详细的错误信息
+            # 其他类型的异常
             raise RuntimeError(
                 f"MAgent2环境步进失败。\n"
                 f"活跃agents: {active_agents}\n"
