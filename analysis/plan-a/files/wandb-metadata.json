@@ -1,0 +1,45 @@
+{
+  "os": "Windows-10-10.0.26100-SP0",
+  "python": "CPython 3.8.20",
+  "startedAt": "2025-11-15T02:51:35.421010Z",
+  "args": [
+    "--algorithm",
+    "ppo",
+    "--config",
+    "configs/ppo/ppo_trajectory_filtering_2v2_a5000_planA.yaml"
+  ],
+  "program": "examples/train_a5000.py",
+  "codePath": "examples\\train_a5000.py",
+  "codePathLocal": "examples\\train_a5000.py",
+  "git": {
+    "remote": "https://github.com/1716285375/paper_code.git",
+    "commit": "59e43067ef162417b82c9aa98eb9039d18882cbc"
+  },
+  "root": "D:\\wsp\\zz\\paper_code",
+  "host": "DESKTOP-2",
+  "executable": "C:\\Users\\Administrator\\.conda\\envs\\zz\\python.exe",
+  "cpu_count": 14,
+  "cpu_count_logical": 28,
+  "gpu": "NVIDIA RTX A5000",
+  "gpu_count": 1,
+  "disk": {
+    "/": {
+      "total": "2000397791232",
+      "used": "79281246208"
+    }
+  },
+  "memory": {
+    "total": "68349857792"
+  },
+  "gpu_nvidia": [
+    {
+      "name": "NVIDIA RTX A5000",
+      "memoryTotal": "25757220864",
+      "cudaCores": 8192,
+      "architecture": "Ampere",
+      "uuid": "GPU-3a91796d-fb4c-09c4-0861-c01ba2128655"
+    }
+  ],
+  "cudaVersion": "12.6",
+  "writerId": "0h4vwvzw5zfakarcm4pszhle99kwq8fj"
+}

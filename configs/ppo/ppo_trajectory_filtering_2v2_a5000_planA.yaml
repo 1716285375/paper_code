@@ -9,10 +9,11 @@ env:
   map_size: 12  # 2v2环境使用12x12地图
   minimap_mode: false
   max_cycles: 300  # 2v2环境可以支持更长的episode（充分利用显存）
-  step_reward: -0.001  # 【方案A修改】从-0.005减少到-0.001，减少每步惩罚
+  step_reward: 0.0  # 【优先级1修复】从-0.001改为0.0，移除每步惩罚，避免策略倾向于"站着不动"
   dead_penalty: -0.1
-  attack_penalty: -0.1
-  attack_opponent_reward: 0.2
+  attack_penalty: 0.0  # 【优先级1修复】从-0.1改为0.0，移除攻击惩罚，鼓励攻击行为
+  attack_opponent_reward: 1.0  # 【优先级1修复】从0.2增加到1.0，大幅增加攻击奖励，鼓励积极战斗
+  # 注意：MAgent2环境可能不支持win_reward和lose_penalty参数，需要在环境包装器中实现
 
 # Agent配置（针对2v2优化的大网络）
 agent:
@@ -36,7 +37,7 @@ agent:
   value_head:
     type: "value_heads/mlp"
     params:
-      hidden_dims: [256, 128]  # 【方案A修改】从[128]增加到[256, 128]，增加价值函数容量
+      hidden_dims: [512, 256, 128]  # 【优先级1修复】从[256, 128]增加到[512, 256, 128]，大幅增加价值函数容量，提升价值函数学习能力
   
   optimizer:
     type: "optimizers/adam"
@@ -50,21 +51,25 @@ agent:
 
 # 训练配置（2v2优化）
 training:
-  num_updates: 10000  # 2v2环境训练更快，可以更多更新次数
+  num_updates: 10000  # 总训练更新次数：10000个更新
+  # 预期改进时间点：
+  # - 1000更新内（前10%）：应该看到明显改进（训练奖励从-88提升到-50以内）
+  # - 5000更新内（前50%）：应该看到显著改进（训练奖励提升到0以上）
+  # - 10000更新内（100%）：应该达到稳定性能（训练奖励稳定在10以上）
   max_steps_per_episode: 300  # 与max_cycles一致，充分利用episode长度
   num_epochs: 5  # 2v2环境可以支持更多训练轮数（充分利用显存）
   batch_size: 5120  # 2v2环境只有4个agent，可以支持超大的batch size（充分利用A5000显存）
   clip_coef: 0.2
-  value_coef: 0.5
+  value_coef: 1.0  # 【优先级1修复】从0.5增加到1.0，增加价值函数学习权重，提升价值函数学习能力
   entropy_coef: 0.05  # 【方案A修改】从0.01增加到0.05，5倍增加，维持探索防止过早收敛
   gamma: 0.99
   gae_lambda: 0.95
-  vf_clip_param: 10.0  # 价值函数裁剪
+  vf_clip_param: 5.0  # 【优先级1修复】从10.0降低到5.0，降低价值函数裁剪，允许价值函数学习更大的价值范围
   
   # 轨迹过滤配置（核心功能）
   use_trajectory_filter: true
   filter_strategy: "mixed"  # 混合策略：优势(50%) + 奖励(30%) + 多样性(20%)
-  filter_ratio: 0.5  # 【方案A修改】从0.75降低到0.5，降低过滤比例，保留更多训练数据
+  filter_ratio: 0.3  # 【优先级1修复】从0.5降低到0.3，大幅降低过滤比例，保留更多训练数据，特别是价值函数学习样本
   reweight_enabled: true  # 启用重加权
   reweight_scheme: "linear"  # 线性权重方案
   # segment_length: null  # 可选：轨迹分段长度（2v2环境通常不需要）
